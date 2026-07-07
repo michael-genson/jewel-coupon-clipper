@@ -6,11 +6,11 @@ import urllib.parse
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Self
+from typing import Annotated, Self
 
 from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright
-from pydantic import BaseModel, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BaseModel, Field, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -19,9 +19,16 @@ class Settings(BaseSettings):
     user_id: str
     password: str
     device_token: str
-    store_id: str
+    store_ids: Annotated[list[str], NoDecode]
 
     log_level: str = "INFO"
+
+    @field_validator("store_ids", mode="before")
+    @classmethod
+    def _split_store_ids(cls, v: str | list[str]) -> list[str]:
+        if isinstance(v, str):
+            return [s.strip() for s in v.split(",") if s.strip()]
+        return v
 
 
 settings = Settings()
@@ -46,6 +53,9 @@ class JewelOffer(BaseModel):
     @property
     def can_clip(self) -> bool:
         return not self.is_deleted and self.status is JewelOfferStatus.UNCLIPPED
+
+    def __hash__(self) -> int:
+        return hash(self.id)
 
 
 class JewelService:
@@ -317,26 +327,28 @@ class JewelService:
 def main() -> None:
     logger = logging.getLogger()
 
+    offers_skipped: set[JewelOffer] = set()
+    offers_clipped: set[JewelOffer] = set()
+    offers_failed: set[JewelOffer] = set()
+
     logger.info(f"Initiating JewelService for {settings.user_id=}, {settings.device_token=}...")
     with JewelService(settings.user_id, settings.password, settings.device_token) as jewel:
-        logger.info("Fetching all offers...")
-        offers = jewel.get_all_offers(settings.store_id)
+        for store_id in settings.store_ids:
+            logger.info(f"Fetching all offers for {store_id=}...")
+            offers = jewel.get_all_offers(store_id)
 
-        logger.info(f"Clipping all offers using {settings.store_id=}...")
-        offers_skipped: list[JewelOffer] = []
-        offers_clipped: list[JewelOffer] = []
-        offers_failed: list[JewelOffer] = []
-        for offer in offers:
-            if not offer.can_clip:
-                offers_skipped.append(offer)
-                continue
+            logger.info(f"Clipping all offers for {store_id=}...")
+            for offer in offers:
+                if not offer.can_clip:
+                    offers_skipped.add(offer)
+                    continue
 
-            try:
-                jewel.clip_offer(settings.store_id, offer)
-                offers_clipped.append(offer)
-            except Exception:
-                logger.exception(f"Failed to clip {offer=}")
-                offers_failed.append(offer)
+                try:
+                    jewel.clip_offer(store_id, offer)
+                    offers_clipped.add(offer)
+                except Exception:
+                    logger.exception(f"Failed to clip {offer=}")
+                    offers_failed.add(offer)
 
     logger.info(f"Complete! {len(offers_skipped)=}, {len(offers_clipped)=}, {len(offers_failed)=}")
     logger.debug(f"{offers_skipped=}")
