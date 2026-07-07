@@ -5,57 +5,12 @@ import random
 import urllib.parse
 import uuid
 from datetime import datetime, timezone
-from enum import Enum
-from typing import Annotated, Self
+from typing import Self
 
 from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright
-from pydantic import BaseModel, Field, field_validator
-from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
-
-    user_id: str
-    password: str
-    device_token: str
-    store_ids: Annotated[list[str], NoDecode]
-
-    log_level: str = "INFO"
-
-    @field_validator("store_ids", mode="before")
-    @classmethod
-    def _split_store_ids(cls, v: str | list[str]) -> list[str]:
-        if isinstance(v, str):
-            return [s.strip() for s in v.split(",") if s.strip()]
-        return v
-
-
-settings = Settings()
-logging.basicConfig(level=settings.log_level)
-
-
-class JewelOfferStatus(Enum):
-    CLIPPED = "C"
-    UNCLIPPED = "U"
-
-
-class JewelOffer(BaseModel):
-    id: str = Field(..., alias="offerId")
-    program: str = Field(..., alias="offerPgm")
-    status: JewelOfferStatus
-    is_deleted: bool = Field(False, alias="deleted")
-
-    name: str = "MISSING-NAME"
-    description: str = "MISSING-DESCRIPTION"
-    price: str = Field("MISSING-PRICE", alias="offerPrice")
-
-    @property
-    def can_clip(self) -> bool:
-        return not self.is_deleted and self.status is JewelOfferStatus.UNCLIPPED
-
-    def __hash__(self) -> int:
-        return hash(self.id)
+from models.jewel import JewelOffer, JewelOfferStatus
+from utils import get_logger
 
 
 class JewelService:
@@ -118,7 +73,7 @@ class JewelService:
     @property
     def logger(self) -> logging.Logger:
         if self._logger is None:
-            self._logger = logging.getLogger(self.__class__.__name__)
+            self._logger = get_logger(self.__class__.__name__)
         return self._logger
 
     @classmethod
@@ -322,39 +277,3 @@ class JewelService:
 
         offer.status = JewelOfferStatus.CLIPPED
         offer.is_deleted = False
-
-
-def main() -> None:
-    logger = logging.getLogger()
-
-    offers_skipped: set[JewelOffer] = set()
-    offers_clipped: set[JewelOffer] = set()
-    offers_failed: set[JewelOffer] = set()
-
-    logger.info(f"Initiating JewelService for {settings.user_id=}, {settings.device_token=}...")
-    with JewelService(settings.user_id, settings.password, settings.device_token) as jewel:
-        for store_id in settings.store_ids:
-            logger.info(f"Fetching all offers for {store_id=}...")
-            offers = jewel.get_all_offers(store_id)
-
-            logger.info(f"Clipping all offers for {store_id=}...")
-            for offer in offers:
-                if not offer.can_clip:
-                    offers_skipped.add(offer)
-                    continue
-
-                try:
-                    jewel.clip_offer(store_id, offer)
-                    offers_clipped.add(offer)
-                except Exception:
-                    logger.exception(f"Failed to clip {offer=}")
-                    offers_failed.add(offer)
-
-    logger.info(f"Complete! {len(offers_skipped)=}, {len(offers_clipped)=}, {len(offers_failed)=}")
-    logger.debug(f"{offers_skipped=}")
-    logger.debug(f"{offers_clipped=}")
-    logger.debug(f"{offers_failed=}")
-
-
-if __name__ == "__main__":
-    main()
