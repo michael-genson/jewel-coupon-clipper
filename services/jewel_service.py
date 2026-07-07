@@ -2,6 +2,7 @@ import hashlib
 import json
 import logging
 import random
+import time
 import urllib.parse
 import uuid
 from datetime import datetime, timezone
@@ -28,6 +29,11 @@ class JewelService:
     OKTA_AUTH_SERVER = "https://ciam.albertsons.com/oauth2/ausp6soxrIyPrm8rS2p6"
     OKTA_CLIENT_ID = "0oap6ku01XJqIRdl42p6"
 
+    # Login intermittently gets blocked by anti-bot protection even under otherwise-identical
+    # conditions - retrying a few times clears it up more often than not.
+    LOGIN_MAX_ATTEMPTS = 3
+    LOGIN_RETRY_DELAY_SECONDS = 5
+
     def __init__(self, user_id: str, password: str, device_token: str | None = None) -> None:
         self.user_id = user_id
         self.password = password
@@ -43,8 +49,25 @@ class JewelService:
     def __enter__(self) -> Self:
         self._playwright = sync_playwright().start()
         self._browser, self._ctx, self._page = self._set_up_browser(self._playwright)
-        self._log_in()
+        self._log_in_with_retry()
         return self
+
+    def _log_in_with_retry(self) -> None:
+        for attempt in range(1, self.LOGIN_MAX_ATTEMPTS + 1):
+            try:
+                self._log_in()
+                return
+            except MFARequiredError:
+                raise
+            except Exception:
+                if attempt == self.LOGIN_MAX_ATTEMPTS:
+                    raise
+                self.logger.warning(
+                    f"Login attempt {attempt}/{self.LOGIN_MAX_ATTEMPTS} failed, "
+                    f"retrying in {self.LOGIN_RETRY_DELAY_SECONDS}s...",
+                    exc_info=True,
+                )
+                time.sleep(self.LOGIN_RETRY_DELAY_SECONDS)
 
     def __exit__(self, *args, **kwargs) -> None:
         if self._browser is not None:
