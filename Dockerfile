@@ -1,5 +1,7 @@
 FROM python:3.14-slim-bookworm
 
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+
 RUN pip install --no-cache-dir uv
 
 WORKDIR /app
@@ -12,7 +14,8 @@ COPY services/ ./services/
 COPY utils.py handler.py ./
 RUN uv sync --frozen --no-dev
 
-RUN uv run playwright install --with-deps chromium
+RUN uv run playwright install-deps firefox
+RUN uv run python -m invisible_playwright fetch
 
 ENV LOG_LEVEL=INFO
 ENV USERS_FILE=/config/users.yaml
