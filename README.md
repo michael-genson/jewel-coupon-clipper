@@ -1,0 +1,62 @@
+# Jewel Coupon Clipper
+
+Automated coupon clipper for Jewel-Osco. Logs in to jewelosco.com, fetches all available
+digital offers for one or more stores, and clips everything that isn't already clipped.
+Supports multiple accounts in a single run.
+
+## Configuration
+
+Configuration is split into two files, both loaded from the project root by default:
+
+- **`.env`** — app-level settings (not per-user)
+- **`users.yaml`** — one entry per Jewel account to run the clipper for
+
+### `.env`
+
+Copy `.env.example` to `.env` and adjust as needed:
+
+```env
+LOG_LEVEL=INFO
+USERS_FILE=
+```
+
+| Variable     | Description                                                               | Default        |
+| ------------ | ------------------------------------------------------------------------- | -------------- |
+| `LOG_LEVEL`  | Standard Python logging level (`DEBUG`, `INFO`, `WARNING`, ...)           | `INFO`         |
+| `USERS_FILE` | Path to the users YAML file                                               | `users.yaml`   |
+
+### `users.yaml`
+
+```yaml
+users:
+  - id: "" # phone number or email used to sign in to jewelosco.com
+    password: ""
+    device_token: "" # see "Device token" below
+    store_ids: [""] # one or more store IDs to clip offers for
+```
+
+#### Device token
+
+Logging in with a brand-new device token will most likely trigger an MFA challenge, which
+this tool does not handle. To avoid that, use a device token from a device/browser that has
+already completed MFA for the account (e.g. capture it from a browser session that's already
+past 2FA), so subsequent logins are treated as trusted.
+
+## Running locally
+
+Requires [uv](https://docs.astral.sh/uv/) and Python 3.14+.
+
+```sh
+uv sync
+uv run playwright install chromium
+uv run python handler.py
+```
+
+## Running with Docker
+
+```sh
+docker compose run --rm jewel-clipper
+```
+
+This builds the image (if needed), runs the clipper once to completion, and removes the
+container afterward — nothing is left running between invocations.
