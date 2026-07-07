@@ -1,11 +1,10 @@
 [project]
 name = "jewel-coupon-clipper"
-version = "0.1.6"
+version = "0.1.5"
 description = "Automated coupon clipper for Jewel-Osco"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "invisible-playwright",
     "playwright>=1.60.0",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.2",
@@ -22,12 +21,5 @@ dev = [
 [tool.mypy]
 plugins = ['pydantic.mypy']
 
-[[tool.mypy.overrides]]
-module = "invisible_playwright.*"
-ignore_missing_imports = true
-
 [tool.ruff]
 line-length = 120
-
-[tool.uv.sources]
-invisible-playwright = { git = "https://github.com/feder-cr/invisible_playwright.git", rev = "firefox-13" }
