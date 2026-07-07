@@ -16,5 +16,8 @@ dev = [
     "ruff>=0.15.20",
 ]
 
+[tool.mypy]
+plugins = ['pydantic.mypy']
+
 [tool.ruff]
 line-length = 120
