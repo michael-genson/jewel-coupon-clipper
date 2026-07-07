@@ -7,7 +7,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Self
 
-from playwright.sync_api import APIResponse, Browser, BrowserContext, Page, Playwright, sync_playwright
+from invisible_playwright import InvisiblePlaywright
+from playwright.sync_api import APIResponse, Browser, BrowserContext, Page
 
 from models.jewel import JewelOffer, JewelOfferStatus
 from utils import get_logger
@@ -33,7 +34,7 @@ class JewelService:
         self.password = password
         self.device_token = device_token or uuid.uuid4().hex
 
-        self._playwright: Playwright | None = None
+        self._invisible_playwright: InvisiblePlaywright | None = None
         self._browser: Browser | None = None
         self._ctx: BrowserContext | None = None
         self._page: Page | None = None
@@ -41,16 +42,15 @@ class JewelService:
         self._logger: logging.Logger | None = None
 
     def __enter__(self) -> Self:
-        self._playwright = sync_playwright().start()
-        self._browser, self._ctx, self._page = self._set_up_browser(self._playwright)
+        self._invisible_playwright = InvisiblePlaywright(headless=True)
+        self._browser = self._invisible_playwright.__enter__()
+        self._ctx, self._page = self._set_up_browser(self._browser)
         self._log_in()
         return self
 
     def __exit__(self, *args, **kwargs) -> None:
-        if self._browser is not None:
-            self._browser.close()
-        if self._playwright is not None:
-            self._playwright.stop()
+        if self._invisible_playwright is not None:
+            self._invisible_playwright.__exit__(*args, **kwargs)
 
     def _assert_ctx_manager[T](self, val: T | None) -> T:
         if val is None:
@@ -84,28 +84,13 @@ class JewelService:
             raise
 
     @classmethod
-    def _set_up_browser(cls, p: Playwright) -> tuple[Browser, BrowserContext, Page]:
-        browser = p.chromium.launch(
-            headless=True,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-            ],
-        )
-        ctx = browser.new_context(
-            viewport={"width": 1280, "height": 800},
-            user_agent=(
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
-            ),
-        )
-        ctx.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+    def _set_up_browser(cls, browser: Browser) -> tuple[BrowserContext, Page]:
+        ctx = browser.new_context(viewport={"width": 1280, "height": 800})
         page = ctx.new_page()
         page.goto(cls.ROOT)
         page.wait_for_load_state("networkidle")
 
-        return browser, ctx, page
+        return ctx, page
 
     def _log_in(self) -> None:
         get_csms_headers = lambda: {  # noqa: E731
