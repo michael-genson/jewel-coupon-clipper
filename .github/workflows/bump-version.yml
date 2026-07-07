@@ -1,0 +1,56 @@
+name: Bump version
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump_type:
+        description: Which part of the version to bump
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
+
+permissions:
+  contents: write
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Install uv
+        run: pip install --no-cache-dir uv
+
+      - name: Bump version
+        id: bump
+        run: |
+          current=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          IFS='.' read -r major minor patch <<< "$current"
+          case "${{ inputs.bump_type }}" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+          new="$major.$minor.$patch"
+          sed -i "s/^version = \"$current\"/version = \"$new\"/" pyproject.toml
+          echo "new_version=$new" >> "$GITHUB_OUTPUT"
+
+      - name: Update lockfile
+        run: uv lock
+
+      - name: Commit, tag, and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml uv.lock
+          git commit -m "Bump version to ${{ steps.bump.outputs.new_version }}"
+          git tag "v${{ steps.bump.outputs.new_version }}"
+          git push
+          git push origin "v${{ steps.bump.outputs.new_version }}"

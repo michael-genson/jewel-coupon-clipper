@@ -21,6 +21,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Extract project version
+        id: version
+        run: |
+          version=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -41,6 +47,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest
+            type=raw,value=${{ steps.version.outputs.version }}
             type=sha
 
       - name: Build and push
