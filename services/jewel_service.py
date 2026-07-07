@@ -68,8 +68,7 @@ class JewelService:
                     raise
                 self.logger.warning(
                     f"Login attempt {attempt}/{self.LOGIN_MAX_ATTEMPTS} failed, "
-                    f"retrying in {self.LOGIN_RETRY_DELAY_SECONDS}s...",
-                    exc_info=True,
+                    f"retrying in {self.LOGIN_RETRY_DELAY_SECONDS}s..."
                 )
                 time.sleep(self.LOGIN_RETRY_DELAY_SECONDS)
 
@@ -106,9 +105,10 @@ class JewelService:
     def _parse_json(self, resp: APIResponse) -> dict:
         try:
             return resp.json()
-        except Exception:
-            self.logger.error(f"Non-JSON response ({resp.status}) from {resp.url}: {resp.text()[:2000]!r}")
-            raise
+        except Exception as e:
+            msg = f"Non-JSON response ({resp.status}) from {resp.url}: {resp.text()[:2000]!r}"
+            self.logger.debug(msg)
+            raise Exception(msg) from e
 
     @classmethod
     def _set_up_browser(cls, p: Playwright) -> tuple[Browser, BrowserContext, Page]:

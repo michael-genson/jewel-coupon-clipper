@@ -13,10 +13,12 @@ def process_user(user: JewelUserConfig) -> None:
     logger.info(f"Initiating JewelService for {user.id=}...")
     with JewelService(user.id, user.password, user.device_token) as jewel:
         for store_id in user.store_ids:
-            logger.info(f"Fetching all offers for {user.id=}, {store_id=}...")
+            logger.info(f"Processing offers for {user.id=}, {store_id=}")
+
+            logger.info("Fetching offers...")
             offers = jewel.get_all_offers(store_id)
 
-            logger.info(f"Clipping all offers for {user.id=}, {store_id=}...")
+            logger.info(f"Found {len(offers)} offer{'' if len(offers) == 1 else 's'}. Clipping all...")
             for offer in offers:
                 if not offer.can_clip:
                     offers_skipped.add(offer)
@@ -29,9 +31,7 @@ def process_user(user: JewelUserConfig) -> None:
                     logger.exception(f"Failed to clip {offer=}")
                     offers_failed.add(offer)
 
-    logger.info(
-        f"Complete for {user.id=}! {len(offers_skipped)=}, {len(offers_clipped)=}, {len(offers_failed)=}"
-    )
+    logger.info(f"Complete for {user.id=}! {len(offers_skipped)=}, {len(offers_clipped)=}, {len(offers_failed)=}")
     logger.debug(f"{offers_skipped=}")
     logger.debug(f"{offers_clipped=}")
     logger.debug(f"{offers_failed=}")
