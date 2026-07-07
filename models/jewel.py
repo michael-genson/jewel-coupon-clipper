@@ -24,3 +24,10 @@ class JewelOffer(BaseModel):
 
     def __hash__(self) -> int:
         return hash(self.id)
+
+
+class JewelUserConfig(BaseModel):
+    id: str
+    password: str
+    device_token: str
+    store_ids: list[str]
