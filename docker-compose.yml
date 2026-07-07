@@ -1,0 +1,9 @@
+services:
+  jewel-clipper:
+    build: .
+    image: jewel-coupon-clipper:latest
+    restart: "no"
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ./users.yaml:/config/users.yaml:ro
