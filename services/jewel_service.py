@@ -14,6 +14,10 @@ from models.jewel import JewelOffer, JewelOfferStatus
 from utils import get_logger
 
 
+class MFARequiredError(RuntimeError):
+    """Raised when Jewel's login flow requires MFA, which this tool doesn't support."""
+
+
 class JewelService:
     """
     Logs in to jewelosco.com and exposes authenticated API calls.
@@ -171,15 +175,13 @@ class JewelService:
             session_token: str = r["sessionToken"]
         except KeyError:
             # See if we hit an MFA check
-            is_mfa = r.get("status") == "MFA_REQUIRED"
-            if is_mfa:
-                self.logger.error(
+            if r.get("status") == "MFA_REQUIRED":
+                raise MFARequiredError(
                     f"MFA check required with device token '{self.device_token}'. MFA checks are not supported."
-                )
-            else:
-                self.logger.error("An unknown exception occurred and no session token was found. Response:")
-                self.logger.error(r)
+                ) from None
 
+            self.logger.error("An unknown exception occurred and no session token was found. Response:")
+            self.logger.error(r)
             raise
 
         if not session_token or not isinstance(session_token, str):
