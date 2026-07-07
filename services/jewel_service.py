@@ -83,34 +83,13 @@ class JewelService:
             self.logger.error(f"Non-JSON response ({resp.status}) from {resp.url}: {resp.text()[:2000]!r}")
             raise
 
-    def _browser_fetch(self, method: str, url: str, headers: dict[str, str], body: str | None = None) -> dict:
-        # Playwright's APIRequestContext (ctx.request) makes requests via its own driver-level
-        # HTTP client, not Chromium's actual network stack - which means its TLS fingerprint
-        # doesn't match the User-Agent it claims. Some endpoints appear to fingerprint this and
-        # block accordingly, so this runs the request as a real fetch() inside the page instead.
-        result = self.page.evaluate(
-            """
-            async ({ url, method, headers, body }) => {
-                const resp = await fetch(url, { method, headers, body, credentials: "include" });
-                const text = await resp.text();
-                return { status: resp.status, url: resp.url, text };
-            }
-            """,
-            {"url": url, "method": method, "headers": headers, "body": body},
-        )
-
-        try:
-            return json.loads(result["text"])
-        except json.JSONDecodeError:
-            self.logger.error(
-                f"Non-JSON response ({result['status']}) from {result['url']}: {result['text'][:2000]!r}"
-            )
-            raise
-
     @classmethod
     def _set_up_browser(cls, p: Playwright) -> tuple[Browser, BrowserContext, Page]:
         browser = p.chromium.launch(
-            headless=True,
+            # Headless mode has its own detectable code paths distinct from a real (headful)
+            # browser - running headful against a virtual display (Xvfb, see Dockerfile) avoids
+            # that, at the cost of requiring a virtual display to actually be present.
+            headless=False,
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
@@ -145,10 +124,13 @@ class JewelService:
 
         body = {"userId": self.user_id, "context": {"deviceToken": self.device_token}}
 
-        authn_url = f"{self.ROOT}/abs/pub/cnc/csmsservice/api/csms/authn?" + urllib.parse.urlencode(
-            {"mode": "nonotp"}
+        resp = self.ctx.request.post(
+            f"{self.ROOT}/abs/pub/cnc/csmsservice/api/csms/authn",
+            params={"mode": "nonotp"},
+            headers=get_csms_headers(),
+            data=json.dumps(body),
         )
-        r: dict = self._browser_fetch("POST", authn_url, headers=get_csms_headers(), body=json.dumps(body))
+        r: dict = self._parse_json(resp)
 
         okta_id = r["oktaId"]
         state_token = r["stateToken"]
@@ -158,12 +140,12 @@ class JewelService:
             "stateToken": state_token,
         }
 
-        r = self._browser_fetch(
-            "POST",
+        resp = self.ctx.request.post(
             f"{self.ROOT}/abs/pub/cnc/csmsservice/api/csms/authn/factors/password/verify",
             headers=get_csms_headers(),
-            body=json.dumps(body),
+            data=json.dumps(body),
         )
+        r = self._parse_json(resp)
 
         try:
             session_token: str = r["sessionToken"]
@@ -207,21 +189,19 @@ class JewelService:
         else:
             raise TimeoutError("Timed out waiting for SWY_SHARED_SESSION cookie to be set")
 
-        userinfo_url = f"{self.ROOT}/bin/safeway/unified/userinfo?" + urllib.parse.urlencode(
-            {
+        resp = self.ctx.request.get(
+            f"{self.ROOT}/bin/safeway/unified/userinfo",
+            params={
                 "rand": str(random.randint(100000, 999999)),
                 "banner": "jewelosco",
-            }
-        )
-        r = self._browser_fetch(
-            "GET",
-            userinfo_url,
+            },
             headers={
                 "Accept": "*/*",
                 "X-Requested-With": "XMLHttpRequest",
                 "Referer": f"{self.ROOT}/",
             },
         )
+        r = self._parse_json(resp)
         self.logger.debug(r)
 
         if r.get("userType") != "C":
