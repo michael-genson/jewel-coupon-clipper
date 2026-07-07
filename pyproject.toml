@@ -22,6 +22,10 @@ dev = [
 [tool.mypy]
 plugins = ['pydantic.mypy']
 
+[[tool.mypy.overrides]]
+module = "invisible_playwright.*"
+ignore_missing_imports = true
+
 [tool.ruff]
 line-length = 120
 
