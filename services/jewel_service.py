@@ -64,12 +64,11 @@ class JewelService:
             except MFARequiredError:
                 raise
             except Exception:
+                self.logger.warning(f"Login attempt {attempt}/{self.LOGIN_MAX_ATTEMPTS} failed")
                 if attempt == self.LOGIN_MAX_ATTEMPTS:
                     raise
-                self.logger.warning(
-                    f"Login attempt {attempt}/{self.LOGIN_MAX_ATTEMPTS} failed, "
-                    f"retrying in {self.LOGIN_RETRY_DELAY_SECONDS}s..."
-                )
+
+                self.logger.warning(f"retrying in {self.LOGIN_RETRY_DELAY_SECONDS}s...")
                 time.sleep(self.LOGIN_RETRY_DELAY_SECONDS)
 
     def __exit__(self, *args, **kwargs) -> None:
@@ -156,8 +155,13 @@ class JewelService:
         )
         r: dict = self._parse_json(resp)
 
-        okta_id = r["oktaId"]
-        state_token = r["stateToken"]
+        try:
+            okta_id = r["oktaId"]
+            state_token = r["stateToken"]
+        except KeyError:
+            self.logger.error(f"Auth payload missing required keys: {r=}")
+            raise
+
         body = {
             "id": okta_id,
             "passCode": self.password,
