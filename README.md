@@ -58,5 +58,25 @@ uv run python handler.py
 docker compose run --rm jewel-clipper
 ```
 
-This builds the image (if needed), runs the clipper once to completion, and removes the
-container afterward — nothing is left running between invocations.
+This builds the image locally (if needed), runs the clipper once to completion, and
+removes the container afterward - nothing is left running between invocations.
+
+### Using the published image
+
+A pre-built image is also available, if you'd rather not build locally:
+
+```yaml
+services:
+  jewel-clipper:
+    image: ghcr.io/michael-genson/jewel-coupon-clipper:latest
+    restart: "no"
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ./users.yaml:/config/users.yaml:ro
+```
+
+```sh
+docker compose pull
+docker compose run --rm jewel-clipper
+```
