@@ -155,8 +155,13 @@ class JewelService:
         )
         r: dict = self._parse_json(resp)
 
-        okta_id = r["oktaId"]
-        state_token = r["stateToken"]
+        try:
+            okta_id = r["oktaId"]
+            state_token = r["stateToken"]
+        except KeyError:
+            self.logger.error(f"Auth payload missing required keys: {r=}")
+            raise
+
         body = {
             "id": okta_id,
             "passCode": self.password,
