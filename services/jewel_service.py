@@ -86,10 +86,7 @@ class JewelService:
     @classmethod
     def _set_up_browser(cls, p: Playwright) -> tuple[Browser, BrowserContext, Page]:
         browser = p.chromium.launch(
-            # Headless mode has its own detectable code paths distinct from a real (headful)
-            # browser - running headful against a virtual display (Xvfb, see Dockerfile) avoids
-            # that, at the cost of requiring a virtual display to actually be present.
-            headless=False,
+            headless=True,
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
