@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Self
 
-from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright
+from playwright.sync_api import APIResponse, Browser, BrowserContext, Page, Playwright, sync_playwright
 
 from models.jewel import JewelOffer, JewelOfferStatus
 from utils import get_logger
@@ -76,6 +76,13 @@ class JewelService:
             self._logger = get_logger(self.__class__.__name__)
         return self._logger
 
+    def _parse_json(self, resp: APIResponse) -> dict:
+        try:
+            return resp.json()
+        except Exception:
+            self.logger.error(f"Non-JSON response ({resp.status}) from {resp.url}: {resp.text()[:2000]!r}")
+            raise
+
     @classmethod
     def _set_up_browser(cls, p: Playwright) -> tuple[Browser, BrowserContext, Page]:
         browser = p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
@@ -113,7 +120,7 @@ class JewelService:
             headers=get_csms_headers(),
             data=json.dumps(body),
         )
-        r: dict = resp.json()
+        r: dict = self._parse_json(resp)
 
         okta_id = r["oktaId"]
         state_token = r["stateToken"]
@@ -128,7 +135,7 @@ class JewelService:
             headers=get_csms_headers(),
             data=json.dumps(body),
         )
-        r = resp.json()
+        r = self._parse_json(resp)
 
         try:
             session_token: str = r["sessionToken"]
@@ -184,7 +191,7 @@ class JewelService:
                 "Referer": f"{self.ROOT}/",
             },
         )
-        r = resp.json()
+        r = self._parse_json(resp)
         self.logger.debug(r)
 
         if r.get("userType") != "C":
@@ -212,7 +219,7 @@ class JewelService:
             },
         )
 
-        r: dict = resp.json()
+        r: dict = self._parse_json(resp)
         self.logger.debug(r)
 
         try:
@@ -262,7 +269,7 @@ class JewelService:
                 }
             ),
         )
-        r: dict = resp.json()
+        r: dict = self._parse_json(resp)
         self.logger.debug(r)
 
         try:
