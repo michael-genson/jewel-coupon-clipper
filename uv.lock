@@ -104,7 +104,7 @@ wheels = [
 
 [[package]]
 name = "jewel-coupon-clipper"
-version = "0.1.9"
+version = "0.1.10"
 source = { virtual = "." }
 dependencies = [
     { name = "playwright" },
