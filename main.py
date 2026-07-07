@@ -1,26 +1,51 @@
 import hashlib
 import json
 import logging
-import os
 import random
 import urllib.parse
 import uuid
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Self
 
 from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     user_id: str
     password: str
     device_token: str
     store_id: str
+
+    log_level: str = "INFO"
+
+
+settings = Settings()
+logging.basicConfig(level=settings.log_level)
+
+
+class JewelOfferStatus(Enum):
+    CLIPPED = "C"
+    UNCLIPPED = "U"
+
+
+class JewelOffer(BaseModel):
+    id: str = Field(..., alias="offerId")
+    program: str = Field(..., alias="offerPgm")
+    status: JewelOfferStatus
+    is_deleted: bool = Field(False, alias="deleted")
+
+    name: str = "MISSING-NAME"
+    description: str = "MISSING-DESCRIPTION"
+    price: str = Field("MISSING-PRICE", alias="offerPrice")
+
+    @property
+    def can_clip(self) -> bool:
+        return not self.is_deleted and self.status is JewelOfferStatus.UNCLIPPED
 
 
 class JewelService:
@@ -203,7 +228,7 @@ class JewelService:
 
         self._shop_token = r["SWY_SHOP_TOKEN"]
 
-    def get_all_offers(self, store_id: str):
+    def get_all_offers(self, store_id: str) -> list[JewelOffer]:
         resp = self.ctx.request.get(
             f"{self.ROOT}/abs/pub/xapi/offers/companiongalleryoffer",
             params={
@@ -222,17 +247,101 @@ class JewelService:
             },
         )
 
-        r = resp.json()
+        r: dict = resp.json()
         self.logger.debug(r)
-        return r
+
+        try:
+            offers_data: dict[str, dict] = r["companionGalleryOffer"]
+        except KeyError as e:
+            self.logger.error(f"Invalid response from companiongalleryoffer: {r}")
+            raise ValueError("Invalid response when fetching offers") from e
+
+        offers: list[JewelOffer] = []
+        for offer_data in offers_data.values():
+            try:
+                offers.append(JewelOffer(**offer_data))
+            except Exception:
+                try:
+                    offer_name = offer_data["name"]
+                except Exception:
+                    offer_name = None
+
+                self.logger.exception(f"Failed to load {offer_name=}")
+
+        return offers
+
+    def clip_offer(self, store_id: str, offer: JewelOffer) -> None:
+        if not offer.can_clip:
+            return
+
+        resp = self.ctx.request.post(
+            f"{self.ROOT}/abs/pub/web/j4u/api/offers/clip",
+            params={"storeId": store_id},
+            headers={
+                "Content-Type": "application/json",
+                "SWY_SSO_TOKEN": self.shop_token,
+                "X-IBM-Client-Id": "306b9569-2a31-4fb9-93aa-08332ba3c55d",
+                "X-IBM-Client-Secret": "N4tK3pW7pP6nB4kL6vN4kW0rS5lE4qH2fY0aB2rK1eP5gK4yV5",
+                "X-SWY_API_KEY": self.SWY_API_KEY,
+                "X-SWY_BANNER": "safeway",
+                "X-SWY_VERSION": "1.0",
+                "X-swyConsumerDirectoryPro": self.shop_token,
+                "x-swy-correlation-id": str(uuid.uuid4()),
+            },
+            data=json.dumps(
+                {
+                    "items": [
+                        {"clipType": "C", "itemId": offer.id, "itemType": offer.program},
+                        {"clipType": "L", "itemId": offer.id, "itemType": offer.program},
+                    ]
+                }
+            ),
+        )
+        r: dict = resp.json()
+        self.logger.debug(r)
+
+        try:
+            item_status = r["items"][0]["status"]
+        except (KeyError, IndexError) as e:
+            self.logger.error(f"Invalid response from clip: {r}")
+            raise ValueError("Invalid response when clipping offer") from e
+
+        if item_status != 1:
+            self.logger.error(f"Failed to clip offer {offer.id}: {r}")
+            raise RuntimeError(f"Failed to clip offer {offer.id}")
+
+        offer.status = JewelOfferStatus.CLIPPED
+        offer.is_deleted = False
 
 
-def main():
-    settings = Settings()
+def main() -> None:
+    logger = logging.getLogger()
 
+    logger.info(f"Initiating JewelService for {settings.user_id=}, {settings.device_token=}...")
     with JewelService(settings.user_id, settings.password, settings.device_token) as jewel:
+        logger.info("Fetching all offers...")
         offers = jewel.get_all_offers(settings.store_id)
-        print(offers)
+
+        logger.info(f"Clipping all offers using {settings.store_id=}...")
+        offers_skipped: list[JewelOffer] = []
+        offers_clipped: list[JewelOffer] = []
+        offers_failed: list[JewelOffer] = []
+        for offer in offers:
+            if not offer.can_clip:
+                offers_skipped.append(offer)
+                continue
+
+            try:
+                jewel.clip_offer(settings.store_id, offer)
+                offers_clipped.append(offer)
+            except Exception:
+                logger.exception(f"Failed to clip {offer=}")
+                offers_failed.append(offer)
+
+    logger.info(f"Complete! {len(offers_skipped)=}, {len(offers_clipped)=}, {len(offers_failed)=}")
+    logger.debug(f"{offers_skipped=}")
+    logger.debug(f"{offers_clipped=}")
+    logger.debug(f"{offers_failed=}")
 
 
 if __name__ == "__main__":
