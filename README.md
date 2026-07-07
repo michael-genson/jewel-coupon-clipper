@@ -70,6 +70,7 @@ services:
   jewel-clipper:
     image: ghcr.io/michael-genson/jewel-coupon-clipper:latest
     restart: "no"
+    shm_size: "1gb"
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
