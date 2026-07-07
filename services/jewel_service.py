@@ -85,7 +85,14 @@ class JewelService:
 
     @classmethod
     def _set_up_browser(cls, p: Playwright) -> tuple[Browser, BrowserContext, Page]:
-        browser = p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+            ],
+        )
         ctx = browser.new_context(
             viewport={"width": 1280, "height": 800},
             user_agent=(
