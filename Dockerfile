@@ -14,7 +14,9 @@ RUN uv sync --frozen --no-dev
 
 RUN uv run playwright install --with-deps chromium
 
+RUN apt-get update && apt-get install -y --no-install-recommends xvfb && rm -rf /var/lib/apt/lists/*
+
 ENV LOG_LEVEL=INFO
 ENV USERS_FILE=/config/users.yaml
 
-ENTRYPOINT ["uv", "run", "python", "handler.py"]
+ENTRYPOINT ["xvfb-run", "--auto-servernum", "--server-args=-screen 0 1280x800x24", "uv", "run", "python", "handler.py"]
