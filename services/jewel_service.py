@@ -2,6 +2,7 @@ import hashlib
 import json
 import logging
 import random
+import time
 import urllib.parse
 import uuid
 from datetime import datetime, timezone
@@ -11,6 +12,10 @@ from playwright.sync_api import APIResponse, Browser, BrowserContext, Page, Play
 
 from models.jewel import JewelOffer, JewelOfferStatus
 from utils import get_logger
+
+
+class MFARequiredError(RuntimeError):
+    """Raised when Jewel's login flow requires MFA, which this tool doesn't support."""
 
 
 class JewelService:
@@ -28,6 +33,11 @@ class JewelService:
     OKTA_AUTH_SERVER = "https://ciam.albertsons.com/oauth2/ausp6soxrIyPrm8rS2p6"
     OKTA_CLIENT_ID = "0oap6ku01XJqIRdl42p6"
 
+    # Login intermittently gets blocked by anti-bot protection even under otherwise-identical
+    # conditions - retrying a few times clears it up more often than not.
+    LOGIN_MAX_ATTEMPTS = 3
+    LOGIN_RETRY_DELAY_SECONDS = 5
+
     def __init__(self, user_id: str, password: str, device_token: str | None = None) -> None:
         self.user_id = user_id
         self.password = password
@@ -43,8 +53,25 @@ class JewelService:
     def __enter__(self) -> Self:
         self._playwright = sync_playwright().start()
         self._browser, self._ctx, self._page = self._set_up_browser(self._playwright)
-        self._log_in()
+        self._log_in_with_retry()
         return self
+
+    def _log_in_with_retry(self) -> None:
+        for attempt in range(1, self.LOGIN_MAX_ATTEMPTS + 1):
+            try:
+                self._log_in()
+                return
+            except MFARequiredError:
+                raise
+            except Exception:
+                if attempt == self.LOGIN_MAX_ATTEMPTS:
+                    raise
+                self.logger.warning(
+                    f"Login attempt {attempt}/{self.LOGIN_MAX_ATTEMPTS} failed, "
+                    f"retrying in {self.LOGIN_RETRY_DELAY_SECONDS}s...",
+                    exc_info=True,
+                )
+                time.sleep(self.LOGIN_RETRY_DELAY_SECONDS)
 
     def __exit__(self, *args, **kwargs) -> None:
         if self._browser is not None:
@@ -148,15 +175,13 @@ class JewelService:
             session_token: str = r["sessionToken"]
         except KeyError:
             # See if we hit an MFA check
-            is_mfa = r.get("status") == "MFA_REQUIRED"
-            if is_mfa:
-                self.logger.error(
+            if r.get("status") == "MFA_REQUIRED":
+                raise MFARequiredError(
                     f"MFA check required with device token '{self.device_token}'. MFA checks are not supported."
-                )
-            else:
-                self.logger.error("An unknown exception occurred and no session token was found. Response:")
-                self.logger.error(r)
+                ) from None
 
+            self.logger.error("An unknown exception occurred and no session token was found. Response:")
+            self.logger.error(r)
             raise
 
         if not session_token or not isinstance(session_token, str):
