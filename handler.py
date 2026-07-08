@@ -1,14 +1,13 @@
-from models.jewel import JewelOffer, JewelUserConfig
+from models.jewel import JewelUserConfig
+from models.metrics import ClipResult
 from services.jewel_service import JewelService
+from services.metrics_service import MetricsService
 from utils import get_logger, get_users
 
 
 def process_user(user: JewelUserConfig) -> None:
     logger = get_logger(__name__)
-
-    offers_skipped: set[JewelOffer] = set()
-    offers_clipped: set[JewelOffer] = set()
-    offers_failed: set[JewelOffer] = set()
+    metrics = MetricsService()
 
     logger.info(f"Initiating JewelService for {user.id=}...")
     with JewelService(user.id, user.password, user.device_token) as jewel:
@@ -21,17 +20,24 @@ def process_user(user: JewelUserConfig) -> None:
             logger.info(f"Found {len(offers)} offer{'' if len(offers) == 1 else 's'}. Clipping all...")
             for offer in offers:
                 if not offer.can_clip:
-                    offers_skipped.add(offer)
+                    metrics.record(ClipResult.SKIPPED, offer)
                     continue
 
                 try:
                     jewel.clip_offer(store_id, offer)
-                    offers_clipped.add(offer)
+                    metrics.record(ClipResult.CLIPPED, offer)
                 except Exception:
                     logger.exception(f"Failed to clip {offer=}")
-                    offers_failed.add(offer)
+                    metrics.record(ClipResult.FAILED, offer)
 
-    logger.info(f"Complete for {user.id=}! {len(offers_skipped)=}, {len(offers_clipped)=}, {len(offers_failed)=}")
+    offers_skipped = metrics.offers_for(ClipResult.SKIPPED)
+    offers_clipped = metrics.offers_for(ClipResult.CLIPPED)
+    offers_failed = metrics.offers_for(ClipResult.FAILED)
+
+    logger.info(
+        f"Complete for {user.id=}! Total offers: {len(metrics.reports)}. "
+        f"{len(offers_clipped)=}, {len(offers_skipped)=}, {len(offers_failed)=}"
+    )
     logger.debug(f"{offers_skipped=}")
     logger.debug(f"{offers_clipped=}")
     logger.debug(f"{offers_failed=}")
