@@ -34,13 +34,17 @@ users:
     device_token: "" # see "Device token" below
     store_ids: [""] # one or more store IDs to clip offers for
 ```
+#### ID
+
+Jewel accepts both your phone number and your email as your login id.
+If you're having trouble getting authentication to work, try using your other id (e.g. if email isn't working, try phone number).
 
 #### Device token
 
 Logging in with a brand-new device token will most likely trigger an MFA challenge, which
 this tool does not handle. To avoid that, use a device token from a device/browser that has
 already completed MFA for the account (e.g. capture it from a browser session that's already
-past 2FA), so subsequent logins are treated as trusted.
+past MFA), so subsequent logins are treated as trusted.
 
 ## Running locally
 
