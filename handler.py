@@ -9,7 +9,7 @@ def process_user(user: JewelUserConfig) -> None:
     logger = get_logger(__name__)
     metrics = MetricsService()
 
-    logger.info(f"Initiating JewelService for {user.id=}...")
+    logger.info(f"Initiating JewelService on {user.banner}({user.root}) for {user.id=}...")
     with JewelService(user.id, user.password, user.root, user.banner, user.device_token) as jewel:
         for store_id in user.store_ids:
             logger.info(f"Processing offers for {user.id=}, {store_id=}")
