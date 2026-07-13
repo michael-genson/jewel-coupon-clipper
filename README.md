@@ -39,7 +39,7 @@ users:
     device_token: "" # see "Device token" below
     store_ids: [""] # one or more store IDs to clip offers for
     root: "https://www.jewelosco.com" # optional, defaults to jewelosco.com - see "Other banners" below
-    banner: "jewelosco" # optional, defaults to jewelosco - see "Other banners" below
+    banner: "" # optional - inferred from root if omitted, see "Other banners" below
 ```
 #### ID
 
@@ -48,16 +48,19 @@ If you're having trouble getting authentication to work, try using your other id
 
 #### Other banners
 
-Jewel-Osco, Safeway, Vons, and Albertsons all run on the same underlying Albertsons Companies
-platform, just under different domains and banner names. To run the clipper against one of the
-others, set `root` and `banner` for that user, e.g.:
+Jewel-Osco, Safeway, Vons, Albertsons, Acme, and other Albertsons Companies banners all run on
+the same underlying platform, just under different domains and banner names. To run the clipper
+against one of the others, just set `root` for that user - `banner` is optional and gets inferred
+from `root` automatically (e.g. `https://www.safeway.com` infers `safeway`), so you only need to
+set it explicitly if the banner name doesn't match the domain.
 
-| Banner      | `root`                         | `banner`     |
-| ----------- | ------------------------------ | ------------ |
-| Jewel-Osco  | `https://www.jewelosco.com`    | `jewelosco`  |
-| Safeway     | `https://www.safeway.com`      | `safeway`    |
-| Vons        | `https://www.vons.com`         | `vons`       |
-| Albertsons  | `https://www.albertsons.com`   | `albertsons` |
+| Banner      | `root`                         | inferred `banner`   |
+| ----------- | ------------------------------ | ------------------- |
+| Jewel-Osco  | `https://www.jewelosco.com`    | `jewelosco`         |
+| Safeway     | `https://www.safeway.com`      | `safeway`           |
+| Vons        | `https://www.vons.com`         | `vons`              |
+| Albertsons  | `https://www.albertsons.com`   | `albertsons`        |
+| Acme        | `https://www.acmemarkets.com`  | `acmemarkets`       |
 
 Everything else (API keys, Okta client ID, etc.) is shared across banners and lives in `.env` -
 see the advanced variables in `.env.example` if a banner ever needs its own.
