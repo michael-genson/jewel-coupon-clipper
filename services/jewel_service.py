@@ -11,37 +11,49 @@ from typing import Self
 from playwright.sync_api import APIResponse, Browser, BrowserContext, Page, Playwright, sync_playwright
 
 from models.jewel import JewelOffer, JewelOfferStatus
-from utils import get_logger
+from utils import get_logger, get_settings
 
 
 class MFARequiredError(RuntimeError):
-    """Raised when Jewel's login flow requires MFA, which this tool doesn't support."""
+    """Raised when the login flow requires MFA, which this tool doesn't support."""
 
 
 class JewelService:
     """
-    Logs in to jewelosco.com and exposes authenticated API calls.
+    Logs in to an Albertsons-family banner site (jewelosco.com, safeway.com, vons.com,
+    albertsons.com, ...) and exposes authenticated API calls.
 
     If no device token is passed, one is generated automatically, however you will
     most likely run into an MFA check which is not supported.
     """
-
-    # These are hardcoded values from Jewel
-    ROOT = "https://www.jewelosco.com"
-    OCP_APIM_SUB_KEY = "9e38e3f1d32a4279a49a264e0831ea46"
-    SWY_API_KEY = "emjou"
-    OKTA_AUTH_SERVER = "https://ciam.albertsons.com/oauth2/ausp6soxrIyPrm8rS2p6"
-    OKTA_CLIENT_ID = "0oap6ku01XJqIRdl42p6"
 
     # Login intermittently gets blocked by anti-bot protection even under otherwise-identical
     # conditions - retrying a few times clears it up more often than not.
     LOGIN_MAX_ATTEMPTS = 3
     LOGIN_RETRY_DELAY_SECONDS = 5
 
-    def __init__(self, user_id: str, password: str, device_token: str | None = None) -> None:
+    def __init__(
+        self,
+        user_id: str,
+        password: str,
+        root: str,
+        banner: str,
+        device_token: str | None = None,
+    ) -> None:
         self.user_id = user_id
         self.password = password
+        self.root = root.rstrip("/")
+        self.banner = banner
         self.device_token = device_token or uuid.uuid4().hex
+
+        # These are constant across all Albertsons-family banners
+        settings = get_settings()
+        self.ocp_apim_sub_key = settings.ocp_apim_sub_key
+        self.swy_api_key = settings.swy_api_key
+        self.okta_auth_server = settings.okta_auth_server
+        self.okta_client_id = settings.okta_client_id
+        self.ibm_client_id = settings.ibm_client_id
+        self.ibm_client_secret = settings.ibm_client_secret
 
         self._playwright: Playwright | None = None
         self._browser: Browser | None = None
@@ -109,8 +121,7 @@ class JewelService:
             self.logger.debug(msg)
             raise Exception(msg) from e
 
-    @classmethod
-    def _set_up_browser(cls, p: Playwright) -> tuple[Browser, BrowserContext, Page]:
+    def _set_up_browser(self, p: Playwright) -> tuple[Browser, BrowserContext, Page]:
         browser = p.chromium.launch(
             headless=True,
             args=[
@@ -128,7 +139,7 @@ class JewelService:
         )
         ctx.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         page = ctx.new_page()
-        page.goto(cls.ROOT)
+        page.goto(self.root)
         page.wait_for_load_state("networkidle")
 
         return browser, ctx, page
@@ -137,10 +148,10 @@ class JewelService:
         get_csms_headers = lambda: {  # noqa: E731
             "Accept": "application/vnd.safeway.v2+json",
             "Content-Type": "application/vnd.safeway.v2+json",
-            "ocp-apim-subscription-key": self.OCP_APIM_SUB_KEY,
+            "ocp-apim-subscription-key": self.ocp_apim_sub_key,
             "x-swy-correlation-id": str(uuid.uuid4()),
             "x-swy-date": datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT"),
-            "x-swy-banner": "jewelosco",
+            "x-swy-banner": self.banner,
             "x-swy-client-id": "web-portal",
             "x-aci-user-hash": hashlib.sha256(self.user_id.encode()).hexdigest(),
         }
@@ -148,7 +159,7 @@ class JewelService:
         body = {"userId": self.user_id, "context": {"deviceToken": self.device_token}}
 
         resp = self.ctx.request.post(
-            f"{self.ROOT}/abs/pub/cnc/csmsservice/api/csms/authn",
+            f"{self.root}/abs/pub/cnc/csmsservice/api/csms/authn",
             params={"mode": "nonotp"},
             headers=get_csms_headers(),
             data=json.dumps(body),
@@ -169,7 +180,7 @@ class JewelService:
         }
 
         resp = self.ctx.request.post(
-            f"{self.ROOT}/abs/pub/cnc/csmsservice/api/csms/authn/factors/password/verify",
+            f"{self.root}/abs/pub/cnc/csmsservice/api/csms/authn/factors/password/verify",
             headers=get_csms_headers(),
             data=json.dumps(body),
         )
@@ -193,13 +204,13 @@ class JewelService:
 
         # Okta redirects to this backend servlet with an auth code; the servlet exchanges
         # it server-side and responds with a Set-Cookie for SWY_SHARED_SESSION.
-        authorize_url = f"{self.OKTA_AUTH_SERVER}/v1/authorize?" + urllib.parse.urlencode(
+        authorize_url = f"{self.okta_auth_server}/v1/authorize?" + urllib.parse.urlencode(
             {
-                "client_id": self.OKTA_CLIENT_ID,
+                "client_id": self.okta_client_id,
                 "response_type": "code",
                 "response_mode": "query",
                 "scope": "openid profile email offline_access used_credentials",
-                "redirect_uri": f"{self.ROOT}/bin/safeway/unified/sso/authorize",
+                "redirect_uri": f"{self.root}/bin/safeway/unified/sso/authorize",
                 "nonce": uuid.uuid4().hex,
                 "state": uuid.uuid4().hex,
                 "sessionToken": session_token,
@@ -216,15 +227,15 @@ class JewelService:
             raise TimeoutError("Timed out waiting for SWY_SHARED_SESSION cookie to be set")
 
         resp = self.ctx.request.get(
-            f"{self.ROOT}/bin/safeway/unified/userinfo",
+            f"{self.root}/bin/safeway/unified/userinfo",
             params={
                 "rand": str(random.randint(100000, 999999)),
-                "banner": "jewelosco",
+                "banner": self.banner,
             },
             headers={
                 "Accept": "*/*",
                 "X-Requested-With": "XMLHttpRequest",
-                "Referer": f"{self.ROOT}/",
+                "Referer": f"{self.root}/",
             },
         )
         r = self._parse_json(resp)
@@ -238,7 +249,7 @@ class JewelService:
 
     def get_all_offers(self, store_id: str) -> list[JewelOffer]:
         resp = self.ctx.request.get(
-            f"{self.ROOT}/abs/pub/xapi/offers/companiongalleryoffer",
+            f"{self.root}/abs/pub/xapi/offers/companiongalleryoffer",
             params={
                 "storeId": store_id,
                 "rand": str(random.randint(100000, 999999)),
@@ -248,9 +259,9 @@ class JewelService:
                 "Accept": "application/json",
                 "Content-Type": "application/vnd.safeway.v2+json",
                 "X-SWY-APPLICATION-TYPE": "web",
-                "X-SWY_API_KEY": self.SWY_API_KEY,
+                "X-SWY_API_KEY": self.swy_api_key,
                 "X-SWY_VERSION": "1.1",
-                "X-SWY_BANNER": "jewelosco",
+                "X-SWY_BANNER": self.banner,
                 "Authorization": f"Bearer {self.shop_token}",
             },
         )
@@ -283,15 +294,15 @@ class JewelService:
             return
 
         resp = self.ctx.request.post(
-            f"{self.ROOT}/abs/pub/web/j4u/api/offers/clip",
+            f"{self.root}/abs/pub/web/j4u/api/offers/clip",
             params={"storeId": store_id},
             headers={
                 "Content-Type": "application/json",
                 "SWY_SSO_TOKEN": self.shop_token,
-                "X-IBM-Client-Id": "306b9569-2a31-4fb9-93aa-08332ba3c55d",
-                "X-IBM-Client-Secret": "N4tK3pW7pP6nB4kL6vN4kW0rS5lE4qH2fY0aB2rK1eP5gK4yV5",
-                "X-SWY_API_KEY": self.SWY_API_KEY,
-                "X-SWY_BANNER": "safeway",
+                "X-IBM-Client-Id": self.ibm_client_id,
+                "X-IBM-Client-Secret": self.ibm_client_secret,
+                "X-SWY_API_KEY": self.swy_api_key,
+                "X-SWY_BANNER": self.banner,
                 "X-SWY_VERSION": "1.0",
                 "X-swyConsumerDirectoryPro": self.shop_token,
                 "x-swy-correlation-id": str(uuid.uuid4()),
