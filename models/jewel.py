@@ -31,3 +31,5 @@ class JewelUserConfig(BaseModel):
     password: str
     device_token: str
     store_ids: list[str]
+    root: str = "https://www.jewelosco.com"
+    banner: str = "jewelosco"

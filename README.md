@@ -1,8 +1,9 @@
 # Jewel Coupon Clipper
 
-Automated coupon clipper for Jewel-Osco. Logs in to jewelosco.com, fetches all available
-digital offers for one or more stores, and clips everything that isn't already clipped.
-Supports multiple accounts in a single run.
+Automated coupon clipper for Jewel-Osco (and other Albertsons-family banners - see
+"Other banners" below). Logs in, fetches all available digital offers for one or more
+stores, and clips everything that isn't already clipped. Supports multiple accounts in a
+single run.
 
 ## Configuration
 
@@ -25,19 +26,41 @@ USERS_FILE=
 | `LOG_LEVEL`  | Standard Python logging level (`DEBUG`, `INFO`, `WARNING`, ...)           | `INFO`         |
 | `USERS_FILE` | Path to the users YAML file                                               | `users.yaml`   |
 
+There are also a handful of advanced variables (`OCP_APIM_SUB_KEY`, `SWY_API_KEY`, `OKTA_AUTH_SERVER`,
+`OKTA_CLIENT_ID`, `IBM_CLIENT_ID`, `IBM_CLIENT_SECRET`) for the API constants shared across all
+banners - see `.env.example`. You shouldn't need to touch these.
+
 ### `users.yaml`
 
 ```yaml
 users:
-  - id: "" # phone number or email used to sign in to jewelosco.com
+  - id: "" # phone number or email used to sign in
     password: ""
     device_token: "" # see "Device token" below
     store_ids: [""] # one or more store IDs to clip offers for
+    root: "https://www.jewelosco.com" # optional, defaults to jewelosco.com - see "Other banners" below
+    banner: "jewelosco" # optional, defaults to jewelosco - see "Other banners" below
 ```
 #### ID
 
 Jewel accepts both your phone number and your email as your login id.
 If you're having trouble getting authentication to work, try using your other id (e.g. if email isn't working, try phone number).
+
+#### Other banners
+
+Jewel-Osco, Safeway, Vons, and Albertsons all run on the same underlying Albertsons Companies
+platform, just under different domains and banner names. To run the clipper against one of the
+others, set `root` and `banner` for that user, e.g.:
+
+| Banner      | `root`                         | `banner`     |
+| ----------- | ------------------------------ | ------------ |
+| Jewel-Osco  | `https://www.jewelosco.com`    | `jewelosco`  |
+| Safeway     | `https://www.safeway.com`      | `safeway`    |
+| Vons        | `https://www.vons.com`         | `vons`       |
+| Albertsons  | `https://www.albertsons.com`   | `albertsons` |
+
+Everything else (API keys, Okta client ID, etc.) is shared across banners and lives in `.env` -
+see the advanced variables in `.env.example` if a banner ever needs its own.
 
 #### Device token
 
