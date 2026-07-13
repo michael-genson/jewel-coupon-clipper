@@ -14,6 +14,15 @@ class AppSettings(BaseSettings):
     log_level: str = "INFO"
     users_file: str = "users.yaml"
 
+    # Shared across all Albertsons-family banner sites (jewelosco, safeway, vons, albertsons, ...) -
+    # only the per-user root/banner in users.yaml differ.
+    ocp_apim_sub_key: str = "9e38e3f1d32a4279a49a264e0831ea46"
+    swy_api_key: str = "emjou"
+    okta_auth_server: str = "https://ciam.albertsons.com/oauth2/ausp6soxrIyPrm8rS2p6"
+    okta_client_id: str = "0oap6ku01XJqIRdl42p6"
+    ibm_client_id: str = "306b9569-2a31-4fb9-93aa-08332ba3c55d"
+    ibm_client_secret: str = "N4tK3pW7pP6nB4kL6vN4kW0rS5lE4qH2fY0aB2rK1eP5gK4yV5"
+
 
 @lru_cache
 def get_settings() -> AppSettings:
