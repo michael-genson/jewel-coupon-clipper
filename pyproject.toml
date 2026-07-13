@@ -1,6 +1,6 @@
 [project]
 name = "jewel-coupon-clipper"
-version = "0.1.11"
+version = "1.0.0"
 description = "Automated coupon clipper for Jewel-Osco"
 readme = "README.md"
 requires-python = ">=3.14"
