@@ -46,6 +46,16 @@ this tool does not handle. To avoid that, use a device token from a device/brows
 already completed MFA for the account (e.g. capture it from a browser session that's already
 past MFA), so subsequent logins are treated as trusted.
 
+To find your device token:
+
+1. Go to https://www.jewelosco.com
+2. Open your browser's dev tools and go to the "Network" tab
+3. Log out (if logged in) and clear the network log (the "clear" icon: ⊘ in Chrome, 🗑 in Firefox)
+4. Log in, then find the `authn` request and check its request body for `context.deviceToken`
+
+Note that if you're adding configs to multiple accounts, and you log-in with them on the same device,
+you will find that the device token is the same (since it's generated per-device). This is fine, Jewel's API doesn't care.
+
 ## Running locally
 
 Requires [uv](https://docs.astral.sh/uv/) and Python 3.14+.
