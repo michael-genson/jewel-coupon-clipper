@@ -15,8 +15,8 @@ class NotifierService:
         self.apprise_url = settings.apprise_url
         self.should_notify_skipped = settings.notify_skipped
 
-    def _build_notification_title(self, notification_type: str) -> str:
-        return f"{self.TITLE_BASE}: {notification_type}"
+    def _build_notification_title(self, notification_type: str, user_id: str) -> str:
+        return f"{self.TITLE_BASE}: {notification_type} ({user_id})"
 
     def _sorted_offers(self, offers: list[JewelOffer]) -> list[JewelOffer]:
         return sorted(offers, key=lambda x: x.name)
@@ -44,7 +44,11 @@ class NotifierService:
         return "\n".join(sections)
 
     def notify_metrics(
-        self, offers_skipped: list[JewelOffer], offers_clipped: list[JewelOffer], offers_failed: list[JewelOffer]
+        self,
+        user_id: str,
+        offers_skipped: list[JewelOffer],
+        offers_clipped: list[JewelOffer],
+        offers_failed: list[JewelOffer],
     ) -> None:
         if not self.apprise_url:
             self.logger.info("Apprise URL is empty")
@@ -58,7 +62,7 @@ class NotifierService:
             self.logger.info("No metrics to send")
             return
 
-        title = self._build_notification_title(self.TITLE_METRICS)
+        title = self._build_notification_title(self.TITLE_METRICS, user_id)
         body = self._build_metrics_notification_body(
             skipped=offers_skipped if self.should_notify_skipped else [],
             clipped=offers_clipped,

@@ -51,7 +51,10 @@ def process_user(user: JewelUserConfig) -> None:
         try:
             notifier_service = NotifierService()
             notifier_service.notify_metrics(
-                offers_skipped=offers_skipped, offers_clipped=offers_clipped, offers_failed=offers_failed
+                user_id=user.id,
+                offers_skipped=offers_skipped,
+                offers_clipped=offers_clipped,
+                offers_failed=offers_failed,
             )
         except Exception:
             logger.exception("Failed to notify via Apprise")
