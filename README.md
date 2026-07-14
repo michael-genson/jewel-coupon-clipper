@@ -21,14 +21,32 @@ LOG_LEVEL=INFO
 USERS_FILE=
 ```
 
-| Variable     | Description                                                               | Default        |
-| ------------ | ------------------------------------------------------------------------- | -------------- |
-| `LOG_LEVEL`  | Standard Python logging level (`DEBUG`, `INFO`, `WARNING`, ...)           | `INFO`         |
-| `USERS_FILE` | Path to the users YAML file                                               | `users.yaml`   |
+| Variable         | Description                                                                              | Default      |
+| ---------------- | ---------------------------------------------------------------------------------------- | ------------ |
+| `LOG_LEVEL`      | Standard Python logging level (`DEBUG`, `INFO`, `WARNING`, ...)                          | `INFO`       |
+| `USERS_FILE`     | Path to the users YAML file                                                              | `users.yaml` |
+| `APPRISE_URL`    | Apprise URL to send a metrics notification to after each run - see "Notifications" below | (unset)      |
+| `NOTIFY_SKIPPED` | Include already-clipped (skipped) offers in the notification body                        | `false`      |
 
 There are also a handful of advanced variables (`OCP_APIM_SUB_KEY`, `SWY_API_KEY`, `OKTA_AUTH_SERVER`,
 `OKTA_CLIENT_ID`, `IBM_CLIENT_ID`, `IBM_CLIENT_SECRET`) for the API constants shared across all
 banners - see `.env.example`. You shouldn't need to touch these.
+
+### Notifications
+
+Set `APPRISE_URL` to get a notification after each user's run summarizing which offers were
+clipped, skipped, and failed. Notifications are sent via
+[Apprise](https://github.com/caronc/apprise), which supports a wide range of services (email,
+Slack, Discord, Pushover, ntfy, ...) - see the Apprise README for the full list of supported
+services and their URL formats.
+
+By default, only clipped and failed offers are included in the notification body. Set
+`NOTIFY_SKIPPED=true` to also include offers that were skipped because they were already clipped.
+
+> [!TIP]
+> For email URLs (e.g. `mailtos://...`), consider appending `?format=text` to the URL. Apprise
+> otherwise treats the body as a single line and strips line breaks, so `format=text` is needed
+> to preserve the per-offer formatting.
 
 ### `users.yaml`
 
@@ -113,6 +131,8 @@ services:
     shm_size: "1gb"
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      APPRISE_URL: ${APPRISE_URL:-}
+      NOTIFY_SKIPPED: ${NOTIFY_SKIPPED:-}
     volumes:
       - ./users.yaml:/config/users.yaml:ro
 ```

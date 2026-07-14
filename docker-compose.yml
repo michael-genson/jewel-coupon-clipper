@@ -6,5 +6,7 @@ services:
     shm_size: "1gb"
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      APPRISE_URL: ${APPRISE_URL:-}
+      NOTIFY_SKIPPED: ${NOTIFY_SKIPPED:-}
     volumes:
       - ./users.yaml:/config/users.yaml:ro
