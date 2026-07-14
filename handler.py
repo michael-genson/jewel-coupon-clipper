@@ -2,10 +2,13 @@ from models.jewel import JewelUserConfig
 from models.metrics import ClipResult
 from services.jewel_service import JewelService
 from services.metrics_service import MetricsService
-from utils import get_logger, get_users
+from services.notifier_service import NotifierService
+from utils import get_logger, get_settings, get_users
 
 
 def process_user(user: JewelUserConfig) -> None:
+    settings = get_settings()
+
     logger = get_logger(__name__)
     metrics = MetricsService()
 
@@ -41,6 +44,17 @@ def process_user(user: JewelUserConfig) -> None:
     logger.debug(f"{offers_skipped=}")
     logger.debug(f"{offers_clipped=}")
     logger.debug(f"{offers_failed=}")
+
+    if settings.apprise_url:
+        logger.info("Sending metrics notification via Apprise...")
+
+        try:
+            notifier_service = NotifierService()
+            notifier_service.notify_metrics(
+                offers_skipped=offers_skipped, offers_clipped=offers_clipped, offers_failed=offers_failed
+            )
+        except Exception:
+            logger.exception("Failed to notify via Apprise")
 
 
 def main() -> None:
