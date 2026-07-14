@@ -16,7 +16,6 @@ class NotifierService:
         self.should_notify_skipped = settings.notify_skipped
 
     def _build_notification_title(self, notification_type: str) -> str:
-
         return f"{self.TITLE_BASE}: {notification_type}"
 
     def _sorted_offers(self, offers: list[JewelOffer]) -> list[JewelOffer]:
@@ -70,5 +69,9 @@ class NotifierService:
         self.logger.debug(body)
 
         notifier = Apprise()
-        notifier.add(self.apprise_url)
-        notifier.notify(title=title, body=body)
+        if not notifier.add(self.apprise_url):
+            self.logger.warning("Apprise URL is invalid, skipping notification")
+            return
+
+        if not notifier.notify(title=title, body=body):
+            self.logger.warning("Apprise failed to send notification")
