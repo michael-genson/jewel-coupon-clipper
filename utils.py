@@ -11,8 +11,13 @@ from models.jewel import JewelUserConfig
 class AppSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
+    # Config
     log_level: str = "INFO"
     users_file: str = "users.yaml"
+
+    # Notifications
+    apprise_url: str | None = None
+    notify_skipped: bool = False
 
     # Shared across all Albertsons-family banner sites (jewelosco, safeway, vons, albertsons, ...) -
     # only the per-user root/banner in users.yaml differ.
