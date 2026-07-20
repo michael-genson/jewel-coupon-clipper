@@ -40,13 +40,12 @@ clipped, skipped, and failed. Notifications are sent via
 Slack, Discord, Pushover, ntfy, ...) - see the Apprise README for the full list of supported
 services and their URL formats.
 
+You can also set `apprise_url` per-user in `users.yaml` to send that user's notifications
+somewhere different - it overrides `APPRISE_URL` for that user only. If neither is set for a user,
+no notification is sent.
+
 By default, only clipped and failed offers are included in the notification body. Set
 `NOTIFY_SKIPPED=true` to also include offers that were skipped because they were already clipped.
-
-> [!TIP]
-> For email URLs (e.g. `mailtos://...`), consider appending `?format=text` to the URL. Apprise
-> otherwise treats the body as a single line and strips line breaks, so `format=text` is needed
-> to preserve the per-offer formatting.
 
 ### `users.yaml`
 
@@ -58,6 +57,7 @@ users:
     store_ids: [""] # one or more store IDs to clip offers for
     root: "https://www.jewelosco.com" # optional, defaults to jewelosco.com - see "Other banners" below
     banner: "" # optional - inferred from root if omitted, see "Other banners" below
+    apprise_url: "" # optional - overrides APPRISE_URL for this user, see "Notifications" above
 ```
 #### ID
 

@@ -36,6 +36,7 @@ class JewelUserConfig(BaseModel):
 
     root: str = "https://www.jewelosco.com"
     banner: str = ""
+    apprise_url: str | None = None
 
     @model_validator(mode="after")
     def validate_banner(self) -> Self:
