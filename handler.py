@@ -45,11 +45,12 @@ def process_user(user: JewelUserConfig) -> None:
     logger.debug(f"{offers_clipped=}")
     logger.debug(f"{offers_failed=}")
 
-    if settings.apprise_url:
+    apprise_url = user.apprise_url or settings.apprise_url
+    if apprise_url:
         logger.info("Sending metrics notification via Apprise...")
 
         try:
-            notifier_service = NotifierService()
+            notifier_service = NotifierService(apprise_url)
             notifier_service.notify_metrics(
                 user_id=user.id,
                 offers_skipped=offers_skipped,

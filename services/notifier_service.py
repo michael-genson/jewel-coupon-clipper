@@ -8,11 +8,11 @@ class NotifierService:
     TITLE_BASE = "Jewel Coupon Clipper"
     TITLE_METRICS = "Metrics"
 
-    def __init__(self):
+    def __init__(self, apprise_url: str):
         settings = get_settings()
         self.logger = get_logger(self.__class__.__name__)
 
-        self.apprise_url = settings.apprise_url
+        self.apprise_url = apprise_url
         self.should_notify_skipped = settings.notify_skipped
 
     def _build_notification_title(self, notification_type: str, user_id: str) -> str:
@@ -50,10 +50,6 @@ class NotifierService:
         offers_clipped: list[JewelOffer],
         offers_failed: list[JewelOffer],
     ) -> None:
-        if not self.apprise_url:
-            self.logger.info("Apprise URL is empty")
-            return
-
         total = len(offers_clipped) + len(offers_failed)
         if self.should_notify_skipped:
             total += len(offers_skipped)
