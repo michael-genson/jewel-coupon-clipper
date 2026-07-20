@@ -47,11 +47,6 @@ no notification is sent.
 By default, only clipped and failed offers are included in the notification body. Set
 `NOTIFY_SKIPPED=true` to also include offers that were skipped because they were already clipped.
 
-> [!TIP]
-> For email URLs (e.g. `mailtos://...`), consider appending `?format=text` to the URL. Apprise
-> otherwise treats the body as a single line and strips line breaks, so `format=text` is needed
-> to preserve the per-offer formatting.
-
 ### `users.yaml`
 
 ```yaml
