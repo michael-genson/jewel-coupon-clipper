@@ -15,6 +15,9 @@ class AppSettings(BaseSettings):
     log_level: str = "INFO"
     users_file: str = "users.yaml"
 
+    # Rewards
+    redeem_points_for_cash: bool = False
+
     # Notifications
     apprise_url: str | None = None
     notify_skipped: bool = False
