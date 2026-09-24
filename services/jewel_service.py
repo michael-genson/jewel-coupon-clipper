@@ -158,16 +158,17 @@ class JewelService:
         return browser, ctx, page
 
     def _log_in(self) -> None:
-        get_csms_headers = lambda: {
-            "Accept": "application/vnd.safeway.v2+json",
-            "Content-Type": "application/vnd.safeway.v2+json",
-            "ocp-apim-subscription-key": self.ocp_apim_sub_key,
-            "x-swy-correlation-id": str(uuid.uuid4()),
-            "x-swy-date": datetime.now(UTC).strftime("%a, %d %b %Y %H:%M:%S GMT"),
-            "x-swy-banner": self.banner,
-            "x-swy-client-id": "web-portal",
-            "x-aci-user-hash": hashlib.sha256(self.user_id.encode()).hexdigest(),
-        }
+        def get_csms_headers() -> dict[str, str]:
+            return {
+                "Accept": "application/vnd.safeway.v2+json",
+                "Content-Type": "application/vnd.safeway.v2+json",
+                "ocp-apim-subscription-key": self.ocp_apim_sub_key,
+                "x-swy-correlation-id": str(uuid.uuid4()),
+                "x-swy-date": datetime.now(UTC).strftime("%a, %d %b %Y %H:%M:%S GMT"),
+                "x-swy-banner": self.banner,
+                "x-swy-client-id": "web-portal",
+                "x-aci-user-hash": hashlib.sha256(self.user_id.encode()).hexdigest(),
+            }
 
         body = {"userId": self.user_id, "context": {"deviceToken": self.device_token}}
 
