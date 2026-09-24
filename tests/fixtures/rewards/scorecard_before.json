@@ -1,0 +1,22 @@
+{
+  "hhId": "<HHID>",
+  "scorecards": [
+    {
+      "programType": "BASEPOINTS",
+      "balance": 1112,
+      "dollarDiscount": 11,
+      "autoRewardsPoints": 1100,
+      "willExpire": 574,
+      "points": [
+        {
+          "value": 574,
+          "validityEndDate": "2026-10-01"
+        },
+        {
+          "value": 538,
+          "validityEndDate": "2026-11-01"
+        }
+      ]
+    }
+  ]
+}
