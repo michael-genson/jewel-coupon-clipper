@@ -2,8 +2,9 @@
 
 Automated coupon clipper for Jewel-Osco (and other Albertsons-family banners - see
 "Other banners" below). Logs in, fetches all available digital offers for one or more
-stores, and clips everything that isn't already clipped. Supports multiple accounts in a
-single run.
+stores, and clips everything that isn't already clipped. Can also redeem your rewards points
+for money off your next purchase (opt-in - see "Redeeming points for cash" below). Supports
+multiple accounts in a single run.
 
 ## Configuration
 
@@ -28,9 +29,9 @@ USERS_FILE=
 | `APPRISE_URL`    | Apprise URL to send a metrics notification to after each run - see "Notifications" below | (unset)      |
 | `NOTIFY_SKIPPED` | Include already-clipped (skipped) offers in the notification body                        | `false`      |
 
-There are also a handful of advanced variables (`OCP_APIM_SUB_KEY`, `SWY_API_KEY`, `OKTA_AUTH_SERVER`,
-`OKTA_CLIENT_ID`, `IBM_CLIENT_ID`, `IBM_CLIENT_SECRET`) for the API constants shared across all
-banners - see `.env.example`. You shouldn't need to touch these.
+There are also a handful of advanced variables (`OCP_APIM_SUB_KEY`, `OCP_APIM_REWARDS_SUB_KEY`,
+`SWY_API_KEY`, `OKTA_AUTH_SERVER`, `OKTA_CLIENT_ID`, `IBM_CLIENT_ID`, `IBM_CLIENT_SECRET`) for the
+API constants shared across all banners - see `.env.example`. You shouldn't need to touch these.
 
 ### Notifications
 
@@ -47,6 +48,34 @@ no notification is sent.
 By default, only clipped and failed offers are included in the notification body. Set
 `NOTIFY_SKIPPED=true` to also include offers that were skipped because they were already clipped.
 
+If `redeem_points_for_cash` is enabled for a user, their notification also includes what was
+redeemed (or why nothing could be) and their remaining points balance.
+
+### Redeeming points for cash
+
+> [!WARNING]
+> This spends real rewards points, and redemptions can't be undone by this tool. It's off by default.
+
+Rewards points expire, and Jewel no longer automatically converts them to money off. Set
+`redeem_points_for_cash: true` for a user in `users.yaml` to have each run redeem their points for
+them, after clipping coupons:
+
+1. Of the available rewards, only whole-order money off (e.g. "$11 off your next purchase of $11 or
+   more") is considered. Department-specific money off (produce, bakery, ...), delivery/pickup fee
+   discounts, and free items are ignored.
+2. The reward with the best points-to-dollar ratio is picked, and redeemed as many times as your
+   points (and the reward's monthly redemption limit) allow. E.g. with 2000 points and a 900 point
+   reward, it's redeemed twice.
+3. If you don't have enough points for the best reward, or it's already been redeemed the maximum
+   number of times this month, **nothing is redeemed** - it never falls back to a reward with a worse
+   ratio. Your points will keep accumulating until the next run can afford it.
+
+Redeemed rewards are added to your account, and apply automatically at checkout. They can be
+used until the end of the following month.
+
+Redeeming is best-effort: if anything goes wrong, it's logged (and included in the notification)
+without affecting coupon clipping.
+
 ### `users.yaml`
 
 ```yaml
@@ -58,6 +87,7 @@ users:
     root: "https://www.jewelosco.com" # optional, defaults to jewelosco.com - see "Other banners" below
     banner: "" # optional - inferred from root if omitted, see "Other banners" below
     apprise_url: "" # optional - overrides APPRISE_URL for this user, see "Notifications" above
+    redeem_points_for_cash: false # optional - see "Redeeming points for cash" above
 ```
 #### ID
 
@@ -108,6 +138,12 @@ Requires [uv](https://docs.astral.sh/uv/) and Python 3.14+.
 uv sync
 uv run playwright install chromium
 uv run python handler.py
+```
+
+To run the tests:
+
+```sh
+uv run pytest
 ```
 
 ## Running with Docker
