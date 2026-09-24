@@ -35,7 +35,7 @@ def process_user(user: JewelUserConfig) -> None:
                     metrics.record(ClipResult.FAILED, offer)
 
         redemption: RedemptionResult | None = None
-        if settings.redeem_points_for_cash:
+        if user.redeem_points_for_cash:
             # Points and rewards are per-household rather than per-store, so any store works
             logger.info(f"Redeeming points for cash for {user.id=}...")
             try:

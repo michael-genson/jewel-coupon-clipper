@@ -9,14 +9,12 @@ from models.jewel import JewelUserConfig
 
 
 class AppSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    # Docker compose passes unset variables through as empty strings, so treat those as unset
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore", env_ignore_empty=True)
 
     # Config
     log_level: str = "INFO"
     users_file: str = "users.yaml"
-
-    # Rewards
-    redeem_points_for_cash: bool = False
 
     # Notifications
     apprise_url: str | None = None

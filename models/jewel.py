@@ -99,6 +99,7 @@ class JewelUserConfig(BaseModel):
     root: str = "https://www.jewelosco.com"
     banner: str = ""
     apprise_url: str | None = None
+    redeem_points_for_cash: bool = False
 
     @model_validator(mode="after")
     def validate_banner(self) -> Self:
