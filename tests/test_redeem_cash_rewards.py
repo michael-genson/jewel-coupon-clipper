@@ -15,6 +15,7 @@ def make_reward(id: str, points: int, dollars: float | None, proto_type: str = "
         offerProtoType=proto_type,
         pointsRequired=points,
         discountAmount=dollars,
+        offerPrice=f"${dollars:g} OFF" if dollars else "FREE",
         clipDetails={"clippedCount": 0, "multiClipLimit": 4},
     )
 
@@ -63,6 +64,7 @@ def test_redeems_best_reward_as_many_times_as_affordable():
     assert result.balance_before == 2000
     assert result.balance_after == 200
     assert result.error is None
+    assert result.unable_to_redeem_reason is None
 
 
 def test_nothing_affordable_redeems_nothing():
@@ -73,6 +75,20 @@ def test_nothing_affordable_redeems_nothing():
     assert result.plan is None
     assert result.redeemed_count == 0
     assert result.balance_after == 800
+    assert not result.is_notable
+    assert result.unable_to_redeem_reason == "not enough points (the best cash reward, $11 OFF, needs 900)"
+
+
+def test_maxed_out_best_reward_reason():
+    best = make_reward("best", 900, 11.0)
+    best.clip_details.clipped_count = 4
+    jewel = FakeJewel(2000, [best, make_reward("worse", 700, 8.0)])
+    result = run(jewel)
+
+    assert jewel.redeem_calls == []
+    reason = result.unable_to_redeem_reason
+    assert reason is not None
+    assert "already been redeemed the maximum 4 times" in reason
 
 
 def test_no_cash_rewards_is_flagged():
@@ -81,6 +97,7 @@ def test_no_cash_rewards_is_flagged():
 
     assert jewel.redeem_calls == []
     assert result.no_cash_rewards_found
+    assert result.is_notable
 
 
 def test_retries_while_balance_is_updating(no_sleep: list[float]):
@@ -108,7 +125,32 @@ def test_other_errors_stop_without_retrying():
 
     assert jewel.redeem_calls == ["best"]
     assert result.redeemed_count == 0
-    assert result.error == "nope"
+    assert result.error == "RuntimeError: nope"
+    assert result.unable_to_redeem_reason == "an error occurred: RuntimeError: nope"
+
+
+def test_fetch_failure_is_recorded_not_raised():
+    jewel = FakeJewel(2000, [make_reward("best", 900, 11.0)])
+
+    def fail() -> JewelPointsBalance:
+        raise ValueError("bad response")
+
+    jewel.get_points_balance = fail  # type: ignore[method-assign]
+    result = run(jewel)
+
+    assert jewel.redeem_calls == []
+    assert result.error == "ValueError: bad response"
+    assert result.balance_before is None
+    assert result.is_notable
+
+
+def test_long_errors_are_truncated():
+    jewel = FakeJewel(2000, [make_reward("best", 900, 11.0)], redeem_errors=[RuntimeError("x" * 1000)])
+    result = run(jewel)
+
+    assert result.error is not None
+    assert len(result.error) == 300
+    assert result.error.endswith("...")
 
 
 def test_stops_when_balance_drops_unexpectedly():
@@ -125,3 +167,4 @@ def test_stops_when_balance_drops_unexpectedly():
     assert jewel.redeem_calls == ["best"]
     assert result.redeemed_count == 1
     assert result.balance_after == 600
+    assert result.unable_to_redeem_reason == "the points balance dropped unexpectedly after 1 of 2"

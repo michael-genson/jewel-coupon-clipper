@@ -40,8 +40,10 @@ def process_user(user: JewelUserConfig) -> None:
             logger.info(f"Redeeming points for cash for {user.id=}...")
             try:
                 redemption = redeem_cash_rewards(jewel, user.store_ids[0])
-            except Exception:
+            except Exception as e:
+                # redeem_cash_rewards records its own errors, but never let redeeming take down clipping
                 logger.exception(f"Failed to redeem points for {user.id=}")
+                redemption = RedemptionResult(error=f"{type(e).__name__}: {e}")
 
     offers_skipped = metrics.offers_for(ClipResult.SKIPPED)
     offers_clipped = metrics.offers_for(ClipResult.CLIPPED)
@@ -59,6 +61,8 @@ def process_user(user: JewelUserConfig) -> None:
             f"Redeemed {redemption.redeemed_count} reward{'' if redemption.redeemed_count == 1 else 's'} for "
             f"{user.id=}. Points: {redemption.balance_before} -> {redemption.balance_after}"
         )
+        if redemption.unable_to_redeem_reason:
+            logger.info(f"Unable to redeem: {redemption.unable_to_redeem_reason}")
 
     apprise_url = user.apprise_url or settings.apprise_url
     if apprise_url:
@@ -71,6 +75,7 @@ def process_user(user: JewelUserConfig) -> None:
                 offers_skipped=offers_skipped,
                 offers_clipped=offers_clipped,
                 offers_failed=offers_failed,
+                redemption=redemption,
             )
         except Exception:
             logger.exception("Failed to notify via Apprise")

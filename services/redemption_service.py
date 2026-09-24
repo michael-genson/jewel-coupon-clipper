@@ -29,16 +29,47 @@ class RedemptionPlan(BaseModel):
 
 
 class RedemptionResult(BaseModel):
-    balance_before: int
-    balance_after: int
+    balance_before: int | None = None
+    balance_after: int | None = None
+    best_reward: JewelReward | None = None
     plan: RedemptionPlan | None = None
     redeemed_count: int = 0
     error: str | None = None
     no_cash_rewards_found: bool = False
 
     @property
-    def reward(self) -> JewelReward | None:
-        return self.plan.reward if self.plan else None
+    def is_notable(self) -> bool:
+        """Whether this is worth a notification on its own (as opposed to routinely not having enough points)"""
+
+        return bool(self.redeemed_count or self.error or self.no_cash_rewards_found)
+
+    @property
+    def unable_to_redeem_reason(self) -> str | None:
+        """Why nothing (or less than planned) was redeemed, if anything went short"""
+
+        if self.error:
+            return f"an error occurred: {self.error}"
+        if self.no_cash_rewards_found:
+            return "no cash rewards were found (the rewards API may have changed)"
+        if self.plan and self.redeemed_count < self.plan.count:
+            return f"the points balance dropped unexpectedly after {self.redeemed_count} of {self.plan.count}"
+        if self.redeemed_count:
+            return None
+
+        reward = self.best_reward
+        if reward is None:
+            return "no cash rewards were found"
+        if reward.redemptions_remaining == 0:
+            return (
+                f"the best cash reward ({reward.price}, {reward.points_required} points) has already been "
+                f"redeemed the maximum {reward.clip_details.multi_clip_limit} times"
+            )
+        return f"not enough points (the best cash reward, {reward.price}, needs {reward.points_required})"
+
+
+def _describe_error(e: Exception, max_length: int = 300) -> str:
+    description = f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
+    return description if len(description) <= max_length else description[: max_length - 3] + "..."
 
 
 def best_cash_reward(rewards: list[JewelReward]) -> JewelReward | None:
@@ -95,14 +126,19 @@ def redeem_cash_rewards(jewel: JewelService, store_id: str) -> RedemptionResult:
     """
     Redeems the best cash reward as many times as the points balance allows (see plan_cash_redemption).
     Redemptions are made one at a time, and the balance is re-checked before each one after the first.
-    Any unexpected error stops further redemptions.
+    Any unexpected error stops further redemptions and is recorded on the result rather than raised.
     """
 
     logger = get_logger(__name__)
 
-    balance = jewel.get_points_balance().balance
-    rewards = jewel.get_all_rewards(store_id)
-    result = RedemptionResult(balance_before=balance, balance_after=balance)
+    try:
+        balance = jewel.get_points_balance().balance
+        rewards = jewel.get_all_rewards(store_id)
+    except Exception as e:
+        logger.exception("Failed to fetch points balance or rewards")
+        return RedemptionResult(error=_describe_error(e))
+
+    result = RedemptionResult(balance_before=balance, balance_after=balance, best_reward=best_cash_reward(rewards))
 
     if not any(r.is_cash for r in rewards):
         result.no_cash_rewards_found = True
@@ -116,8 +152,7 @@ def redeem_cash_rewards(jewel: JewelService, store_id: str) -> RedemptionResult:
     plan = plan_cash_redemption(rewards, balance)
     result.plan = plan
     if plan is None:
-        best = best_cash_reward(rewards)
-        logger.info(f"Not redeeming any points ({balance=}, best cash reward: {best})")
+        logger.info(f"Not redeeming any points: {result.unable_to_redeem_reason}")
         return result
 
     reward = plan.reward
@@ -127,21 +162,21 @@ def redeem_cash_rewards(jewel: JewelService, store_id: str) -> RedemptionResult:
     )
 
     for i in range(plan.count):
-        if i > 0:
-            time.sleep(POST_REDEEM_DELAY_SECONDS)
-            result.balance_after = jewel.get_points_balance().balance
-            if result.balance_after < reward.points_required:
-                logger.warning(
-                    f"Balance is down to {result.balance_after} points, stopping after "
-                    f"{result.redeemed_count}/{plan.count} redemptions"
-                )
-                break
-
         try:
+            if i > 0:
+                time.sleep(POST_REDEEM_DELAY_SECONDS)
+                result.balance_after = jewel.get_points_balance().balance
+                if result.balance_after < reward.points_required:
+                    logger.warning(
+                        f"Balance is down to {result.balance_after} points, stopping after "
+                        f"{result.redeemed_count}/{plan.count} redemptions"
+                    )
+                    break
+
             _redeem_with_retry(jewel, store_id, reward)
         except Exception as e:
             logger.exception(f"Failed to redeem {reward.id}, stopping after {result.redeemed_count}/{plan.count}")
-            result.error = str(e)
+            result.error = _describe_error(e)
             break
 
         result.redeemed_count += 1

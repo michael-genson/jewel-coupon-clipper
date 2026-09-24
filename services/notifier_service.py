@@ -3,6 +3,7 @@ from html import escape
 from apprise import Apprise, NotifyFormat
 
 from models.jewel import JewelOffer
+from services.redemption_service import RedemptionResult
 from utils import get_logger, get_settings
 
 
@@ -37,10 +38,36 @@ class NotifierService:
         header = "".join(f"<th style='{cell_style}'>{h}</th>" for h in ("Name", "Description", "Price"))
         return f"<table style='border-collapse: collapse;'><tr>{header}</tr>{rows}</table>"
 
+    def _format_redemption_section(self, redemption: RedemptionResult) -> str:
+        lines: list[str] = []
+        if redemption.redeemed_count and redemption.plan:
+            reward = redemption.plan.reward
+            dollars = (reward.discount_amount or 0) * redemption.redeemed_count
+            lines.append(
+                f"Redeemed {escape(reward.price)} ({escape(reward.title)}) {redemption.redeemed_count}x "
+                f"for {reward.points_required * redemption.redeemed_count} points: ${dollars:.2f} total"
+            )
+
+        if reason := redemption.unable_to_redeem_reason:
+            prefix = "Stopped early" if redemption.redeemed_count else "Unable to redeem"
+            lines.append(f"{prefix}: {escape(reason)}")
+
+        if not redemption.error and redemption.balance_after is not None:
+            lines.append(f"Points balance: {redemption.balance_after}")
+
+        return "<h3>Points Rewards</h3>" + "".join(f"<p>{line}</p>" for line in lines)
+
     def _build_metrics_notification_body(
-        self, skipped: list[JewelOffer], clipped: list[JewelOffer], failed: list[JewelOffer]
+        self,
+        skipped: list[JewelOffer],
+        clipped: list[JewelOffer],
+        failed: list[JewelOffer],
+        redemption: RedemptionResult | None = None,
     ) -> str:
         sections: list[str] = []
+        if redemption:
+            sections.append(self._format_redemption_section(redemption))
+
         for header, offers in [("Failed", failed), ("Clipped", clipped), ("Skipped", skipped)]:
             if not offers:
                 continue
@@ -55,12 +82,14 @@ class NotifierService:
         offers_skipped: list[JewelOffer],
         offers_clipped: list[JewelOffer],
         offers_failed: list[JewelOffer],
+        redemption: RedemptionResult | None = None,
     ) -> None:
         total = len(offers_clipped) + len(offers_failed)
         if self.should_notify_skipped:
             total += len(offers_skipped)
 
-        if not total:
+        # Routinely not having enough points isn't worth a notification on its own, but gets included when one is sent
+        if not total and not (redemption and redemption.is_notable):
             self.logger.info("No metrics to send")
             return
 
@@ -69,6 +98,7 @@ class NotifierService:
             skipped=offers_skipped if self.should_notify_skipped else [],
             clipped=offers_clipped,
             failed=offers_failed,
+            redemption=redemption,
         )
 
         self.logger.debug(title)
