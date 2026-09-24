@@ -1,0 +1,29 @@
+{
+  "url": "https://www.jewelosco.com/abs/pub/web/j4u/api/offers/clip",
+  "params": {
+    "storeId": "3422"
+  },
+  "body": {
+    "items": [
+      {
+        "clipType": "C",
+        "itemId": "82573078",
+        "itemType": "GR"
+      },
+      {
+        "clipType": "L",
+        "itemId": "82573078",
+        "itemType": "GR"
+      }
+    ]
+  },
+  "headers": {
+    "Content-Type": "application/json",
+    "X-Swy_api_key": "emjou",
+    "X-Swy_version": "1.0",
+    "X-Swy_banner": "jewelosco",
+    "X-Swyconsumerdirectorypro": "<SHOP_TOKEN>",
+    "Swy_sso_token": "<SHOP_TOKEN>",
+    "x-swy-correlation-id": "1fd89eb1-6ec3-4286-a4e9-e7706db25899"
+  }
+}
