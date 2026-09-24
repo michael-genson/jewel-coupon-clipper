@@ -22,6 +22,7 @@ class AppSettings(BaseSettings):
     # Shared across all Albertsons-family banner sites (jewelosco, safeway, vons, albertsons, ...) -
     # only the per-user root/banner in users.yaml differ.
     ocp_apim_sub_key: str = "9e38e3f1d32a4279a49a264e0831ea46"
+    ocp_apim_rewards_sub_key: str = "daedbc8e06814b3f857bfe1f00270865"
     swy_api_key: str = "emjou"
     okta_auth_server: str = "https://ciam.albertsons.com/oauth2/ausp6soxrIyPrm8rS2p6"
     okta_client_id: str = "0oap6ku01XJqIRdl42p6"

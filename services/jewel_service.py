@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import json
 import logging
@@ -5,17 +6,21 @@ import random
 import time
 import urllib.parse
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Self
 
 from playwright.sync_api import APIResponse, Browser, BrowserContext, Page, Playwright, sync_playwright
 
-from models.jewel import JewelOffer, JewelOfferStatus
+from models.jewel import JewelOffer, JewelOfferStatus, JewelPointsBalance, JewelReward
 from utils import get_logger, get_settings
 
 
 class MFARequiredError(RuntimeError):
     """Raised when the login flow requires MFA, which this tool doesn't support."""
+
+
+class RewardBalanceUpdatingError(RuntimeError):
+    """Raised when a redemption is rejected because the points balance is still updating from a prior one."""
 
 
 class JewelService:
@@ -49,6 +54,7 @@ class JewelService:
         # These are constant across all Albertsons-family banners
         settings = get_settings()
         self.ocp_apim_sub_key = settings.ocp_apim_sub_key
+        self.ocp_apim_rewards_sub_key = settings.ocp_apim_rewards_sub_key
         self.swy_api_key = settings.swy_api_key
         self.okta_auth_server = settings.okta_auth_server
         self.okta_client_id = settings.okta_client_id
@@ -113,13 +119,20 @@ class JewelService:
             self._logger = get_logger(self.__class__.__name__)
         return self._logger
 
+    @property
+    def household_id(self) -> str:
+        # The shop token is a JWT; its "hid" claim is the household id the rewards APIs are keyed on
+        payload = self.shop_token.split(".")[1]
+        claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+        return claims["hid"]
+
     def _parse_json(self, resp: APIResponse) -> dict:
         try:
             return resp.json()
         except Exception as e:
             msg = f"Non-JSON response ({resp.status}) from {resp.url}: {resp.text()[:2000]!r}"
             self.logger.debug(msg)
-            raise Exception(msg) from e
+            raise ValueError(msg) from e
 
     def _set_up_browser(self, p: Playwright) -> tuple[Browser, BrowserContext, Page]:
         browser = p.chromium.launch(
@@ -134,7 +147,7 @@ class JewelService:
             viewport={"width": 1280, "height": 800},
             user_agent=(
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+                "(KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
             ),
         )
         ctx.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
@@ -145,12 +158,12 @@ class JewelService:
         return browser, ctx, page
 
     def _log_in(self) -> None:
-        get_csms_headers = lambda: {  # noqa: E731
+        get_csms_headers = lambda: {
             "Accept": "application/vnd.safeway.v2+json",
             "Content-Type": "application/vnd.safeway.v2+json",
             "ocp-apim-subscription-key": self.ocp_apim_sub_key,
             "x-swy-correlation-id": str(uuid.uuid4()),
-            "x-swy-date": datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT"),
+            "x-swy-date": datetime.now(UTC).strftime("%a, %d %b %Y %H:%M:%S GMT"),
             "x-swy-banner": self.banner,
             "x-swy-client-id": "web-portal",
             "x-aci-user-hash": hashlib.sha256(self.user_id.encode()).hexdigest(),
@@ -280,18 +293,16 @@ class JewelService:
             try:
                 offers.append(JewelOffer(**offer_data))
             except Exception:
-                try:
-                    offer_name = offer_data["name"]
-                except Exception:
-                    offer_name = None
-
+                offer_name = offer_data.get("name")
                 self.logger.exception(f"Failed to load {offer_name=}")
 
         return offers
 
-    def clip_offer(self, store_id: str, offer: JewelOffer) -> None:
-        if not offer.can_clip:
-            return
+    def _clip(self, store_id: str, item_id: str, item_type: str) -> dict:
+        """
+        Clips an item and returns the clip result for it. Used both for coupons (offers) and for
+        rewards, which are redeemed by clipping them.
+        """
 
         resp = self.ctx.request.post(
             f"{self.root}/abs/pub/web/j4u/api/offers/clip",
@@ -310,8 +321,8 @@ class JewelService:
             data=json.dumps(
                 {
                     "items": [
-                        {"clipType": "C", "itemId": offer.id, "itemType": offer.program},
-                        {"clipType": "L", "itemId": offer.id, "itemType": offer.program},
+                        {"clipType": "C", "itemId": item_id, "itemType": item_type},
+                        {"clipType": "L", "itemId": item_id, "itemType": item_type},
                     ]
                 }
             ),
@@ -320,14 +331,96 @@ class JewelService:
         self.logger.debug(r)
 
         try:
-            item_status = r["items"][0]["status"]
-        except (KeyError, IndexError) as e:
+            item: dict = r["items"][0]
+            if "status" not in item:
+                raise KeyError("status")
+        except (KeyError, IndexError, TypeError) as e:
             self.logger.error(f"Invalid response from clip: {r}")
-            raise ValueError("Invalid response when clipping offer") from e
+            raise ValueError(f"Invalid response when clipping {item_type} item {item_id}") from e
 
-        if item_status != 1:
-            self.logger.error(f"Failed to clip offer {offer.id}: {r}")
+        return item
+
+    def clip_offer(self, store_id: str, offer: JewelOffer) -> None:
+        if not offer.can_clip:
+            return
+
+        item = self._clip(store_id, offer.id, offer.program)
+        if item["status"] != 1:
+            self.logger.error(f"Failed to clip offer {offer.id}: {item}")
             raise RuntimeError(f"Failed to clip offer {offer.id}")
 
         offer.status = JewelOfferStatus.CLIPPED
         offer.is_deleted = False
+
+    def get_points_balance(self) -> JewelPointsBalance:
+        resp = self.ctx.request.post(
+            f"{self.root}/abs/pub/xapi/ocrp/rewards/scorecard",
+            headers={
+                "Accept": "application/vnd.safeway.v3+json",
+                "Content-Type": "application/vnd.safeway.v3+json",
+                "X-ABS-Client-ID": "WEB",
+                "ocp-apim-subscription-key": self.ocp_apim_rewards_sub_key,
+                "Authorization": f"Bearer {self.shop_token}",
+                "x-swy-correlation-id": str(uuid.uuid4()),
+            },
+            data=json.dumps({"hhid": self.household_id, "programType": ["BASEPOINTS"]}),
+        )
+        r: dict = self._parse_json(resp)
+        self.logger.debug(r)
+
+        try:
+            scorecard = next(sc for sc in r["scorecards"] if sc["programType"] == "BASEPOINTS")
+        except (KeyError, TypeError, StopIteration) as e:
+            self.logger.error(f"Invalid response from scorecard: {r}")
+            raise ValueError("Invalid response when fetching points balance") from e
+
+        return JewelPointsBalance(**scorecard)
+
+    def get_all_rewards(self, store_id: str) -> list[JewelReward]:
+        resp = self.ctx.request.get(
+            f"{self.root}/abs/pub/web/j4u/api/grocery/rewards/offers",
+            params={
+                "storeId": store_id,
+                "sortAsc": "specialRank",
+                "rewardsSimplified": True,
+            },
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.shop_token}",
+                "X-IBM-Client-Id": self.ibm_client_id,
+                "X-IBM-Client-Secret": self.ibm_client_secret,
+                "X-SWY_API_KEY": self.swy_api_key,
+                "X-SWY_BANNER": self.banner,
+                "X-SWY_VERSION": "3.0",
+                "x-swy-correlation-id": str(uuid.uuid4()),
+            },
+        )
+        r: dict = self._parse_json(resp)
+        self.logger.debug(r)
+
+        try:
+            rewards_data: list[dict] = r["grOffers"]
+        except KeyError as e:
+            self.logger.error(f"Invalid response from rewards offers: {r}")
+            raise ValueError("Invalid response when fetching rewards") from e
+
+        rewards: list[JewelReward] = []
+        for reward_data in rewards_data:
+            try:
+                rewards.append(JewelReward(**reward_data))
+            except Exception:
+                self.logger.exception(f"Failed to load reward {reward_data.get('title')!r}")
+
+        return rewards
+
+    def redeem_reward(self, store_id: str, reward: JewelReward) -> None:
+        """Redeems a reward once. This spends real points and cannot be undone."""
+
+        item = self._clip(store_id, reward.id, reward.program)
+        if item["status"] != 1:
+            self.logger.error(f"Failed to redeem reward {reward.id}: {item}")
+            if item.get("errorCd") in ("EMJOC8024E", "EMJOC8025E"):
+                raise RewardBalanceUpdatingError(f"Points balance is still updating, cannot redeem {reward.id} yet")
+            raise RuntimeError(f"Failed to redeem reward {reward.id}: {item.get('errorCd')} {item.get('errorMsg')}")
+
+        reward.clip_details.clipped_count += 1
