@@ -70,8 +70,13 @@ class JewelService:
 
     def __enter__(self) -> Self:
         self._playwright = sync_playwright().start()
-        self._browser, self._ctx, self._page = self._set_up_browser(self._playwright)
-        self._log_in_with_retry()
+        try:
+            self._browser, self._ctx, self._page = self._set_up_browser(self._playwright)
+            self._log_in_with_retry()
+        except BaseException:
+            self.__exit__()
+            raise
+
         return self
 
     def _log_in_with_retry(self) -> None:
@@ -90,10 +95,14 @@ class JewelService:
                 time.sleep(self.LOGIN_RETRY_DELAY_SECONDS)
 
     def __exit__(self, *args, **kwargs) -> None:
-        if self._browser is not None:
-            self._browser.close()
-        if self._playwright is not None:
-            self._playwright.stop()
+        try:
+            if self._browser is not None:
+                self._browser.close()
+        finally:
+            if self._playwright is not None:
+                self._playwright.stop()
+
+            self._playwright = self._browser = self._ctx = self._page = None
 
     def _assert_ctx_manager[T](self, val: T | None) -> T:
         if val is None:
