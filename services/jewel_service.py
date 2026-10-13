@@ -33,9 +33,11 @@ class JewelService:
     """
 
     # Login intermittently gets blocked by anti-bot protection even under otherwise-identical
-    # conditions - retrying a few times clears it up more often than not.
-    LOGIN_MAX_ATTEMPTS = 3
-    LOGIN_RETRY_DELAY_SECONDS = 5
+    # conditions - retrying a few times (see LOGIN_MAX_ATTEMPTS) clears it up more often than not.
+    # Retries back off exponentially, with some jitter so they don't land on a fixed cadence.
+    LOGIN_RETRY_BASE_DELAY_SECONDS = 5
+    LOGIN_RETRY_MAX_DELAY_SECONDS = 60
+    LOGIN_RETRY_JITTER = 0.25
 
     def __init__(
         self,
@@ -71,7 +73,7 @@ class JewelService:
     def __enter__(self) -> Self:
         self._playwright = sync_playwright().start()
         try:
-            self._browser, self._ctx, self._page = self._set_up_browser(self._playwright)
+            self._browser = self._launch_browser(self._playwright)
             self._log_in_with_retry()
         except BaseException:
             self.__exit__()
@@ -79,20 +81,31 @@ class JewelService:
 
         return self
 
+    def _get_retry_delay(self, attempt: int) -> float:
+        """Seconds to wait after failed attempt number `attempt` (1-indexed) before trying again."""
+
+        delay = min(self.LOGIN_RETRY_BASE_DELAY_SECONDS * 2 ** (attempt - 1), self.LOGIN_RETRY_MAX_DELAY_SECONDS)
+        return delay * random.uniform(1 - self.LOGIN_RETRY_JITTER, 1 + self.LOGIN_RETRY_JITTER)
+
     def _log_in_with_retry(self) -> None:
-        for attempt in range(1, self.LOGIN_MAX_ATTEMPTS + 1):
+        max_attempts = get_settings().login_max_attempts
+        for attempt in range(1, max_attempts + 1):
             try:
+                # Each attempt gets a fresh session: once anti-bot protection flags a session, its
+                # cookies tend to stay flagged, so retrying in the same one rarely helps.
+                self._start_session()
                 self._log_in()
                 return
             except MFARequiredError:
                 raise
             except Exception:
-                self.logger.warning(f"Login attempt {attempt}/{self.LOGIN_MAX_ATTEMPTS} failed")
-                if attempt == self.LOGIN_MAX_ATTEMPTS:
+                self.logger.warning(f"Login attempt {attempt}/{max_attempts} failed")
+                if attempt == max_attempts:
                     raise
 
-                self.logger.warning(f"retrying in {self.LOGIN_RETRY_DELAY_SECONDS}s...")
-                time.sleep(self.LOGIN_RETRY_DELAY_SECONDS)
+                delay = self._get_retry_delay(attempt)
+                self.logger.warning(f"retrying with a new session in {delay:.1f}s...")
+                time.sleep(delay)
 
     def __exit__(self, *args, **kwargs) -> None:
         try:
@@ -103,6 +116,7 @@ class JewelService:
                 self._playwright.stop()
 
             self._playwright = self._browser = self._ctx = self._page = None
+            self._shop_token = None
 
     def _assert_ctx_manager[T](self, val: T | None) -> T:
         if val is None:
@@ -143,8 +157,8 @@ class JewelService:
             self.logger.debug(msg)
             raise ValueError(msg) from e
 
-    def _set_up_browser(self, p: Playwright) -> tuple[Browser, BrowserContext, Page]:
-        browser = p.chromium.launch(
+    def _launch_browser(self, p: Playwright) -> Browser:
+        return p.chromium.launch(
             headless=True,
             args=[
                 "--disable-blink-features=AutomationControlled",
@@ -152,6 +166,21 @@ class JewelService:
                 "--disable-dev-shm-usage",
             ],
         )
+
+    def _start_session(self) -> None:
+        """Replaces the current browser context (if any) with a new one, with no cookies/storage carried over."""
+
+        browser = self._assert_ctx_manager(self._browser)
+        if self._ctx is not None:
+            try:
+                self._ctx.close()
+            except Exception:
+                self.logger.debug("Failed to close previous browser context", exc_info=True)
+
+        self._ctx = self._page = self._shop_token = None
+        self._ctx, self._page = self._new_context(browser)
+
+    def _new_context(self, browser: Browser) -> tuple[BrowserContext, Page]:
         ctx = browser.new_context(
             viewport={"width": 1280, "height": 800},
             user_agent=(
@@ -164,7 +193,7 @@ class JewelService:
         page.goto(self.root)
         page.wait_for_load_state("networkidle")
 
-        return browser, ctx, page
+        return ctx, page
 
     def _log_in(self) -> None:
         def get_csms_headers() -> dict[str, str]:
