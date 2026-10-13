@@ -3,6 +3,7 @@ from functools import lru_cache
 from pathlib import Path
 
 import yaml
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from models.jewel import JewelUserConfig
@@ -15,6 +16,7 @@ class AppSettings(BaseSettings):
     # Config
     log_level: str = "INFO"
     users_file: str = "users.yaml"
+    login_max_attempts: int = Field(default=5, ge=1)
 
     # Notifications
     apprise_url: str | None = None
