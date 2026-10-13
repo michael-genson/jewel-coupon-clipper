@@ -8,5 +8,6 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       APPRISE_URL: ${APPRISE_URL:-}
       NOTIFY_SKIPPED: ${NOTIFY_SKIPPED:-}
+      LOGIN_MAX_ATTEMPTS: ${LOGIN_MAX_ATTEMPTS:-}
     volumes:
       - ./users.yaml:/config/users.yaml:ro

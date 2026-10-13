@@ -22,16 +22,24 @@ LOG_LEVEL=INFO
 USERS_FILE=
 ```
 
-| Variable         | Description                                                                              | Default      |
-| ---------------- | ---------------------------------------------------------------------------------------- | ------------ |
-| `LOG_LEVEL`      | Standard Python logging level (`DEBUG`, `INFO`, `WARNING`, ...)                          | `INFO`       |
-| `USERS_FILE`     | Path to the users YAML file                                                              | `users.yaml` |
-| `APPRISE_URL`    | Apprise URL to send a metrics notification to after each run - see "Notifications" below | (unset)      |
-| `NOTIFY_SKIPPED` | Include already-clipped (skipped) offers in the notification body                        | `false`      |
+| Variable             | Description                                                                                      | Default      |
+| -------------------- | ------------------------------------------------------------------------------------------------ | ------------ |
+| `LOG_LEVEL`          | Standard Python logging level (`DEBUG`, `INFO`, `WARNING`, ...)                                  | `INFO`       |
+| `USERS_FILE`         | Path to the users YAML file                                                                      | `users.yaml` |
+| `APPRISE_URL`        | Apprise URL to send a metrics notification to after each run - see "Notifications" below         | (unset)      |
+| `NOTIFY_SKIPPED`     | Include already-clipped (skipped) offers in the notification body                                | `false`      |
+| `LOGIN_MAX_ATTEMPTS` | Total login attempts per user (including the first) before giving up - see "Login retries" below | `5`          |
 
 There are also a handful of advanced variables (`OCP_APIM_SUB_KEY`, `OCP_APIM_REWARDS_SUB_KEY`,
 `SWY_API_KEY`, `OKTA_AUTH_SERVER`, `OKTA_CLIENT_ID`, `IBM_CLIENT_ID`, `IBM_CLIENT_SECRET`) for the
 API constants shared across all banners - see `.env.example`. You shouldn't need to touch these.
+
+### Login retries
+
+Logins are occasionally blocked by the site's anti-bot protection, even when nothing is wrong. When
+that happens the login is retried in a brand-new browser session, waiting a little longer each time
+(roughly 5s, 10s, 20s, 40s, then 60s between attempts, with some randomness). If you regularly see
+users fail with every attempt exhausted, try raising `LOGIN_MAX_ATTEMPTS`.
 
 ### Notifications
 
@@ -169,6 +177,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       APPRISE_URL: ${APPRISE_URL:-}
       NOTIFY_SKIPPED: ${NOTIFY_SKIPPED:-}
+      LOGIN_MAX_ATTEMPTS: ${LOGIN_MAX_ATTEMPTS:-}
     volumes:
       - ./users.yaml:/config/users.yaml:ro
 ```
