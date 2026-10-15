@@ -24,12 +24,9 @@ def sleeps(monkeypatch: pytest.MonkeyPatch) -> list[float]:
 
 
 def patch_login(monkeypatch: pytest.MonkeyPatch, service: JewelService, outcomes: list[Exception | None]) -> dict:
-    """Replaces session setup/login with stubs; each login attempt consumes the next outcome (raise or succeed)."""
+    """Replaces login with a stub; each login attempt consumes the next outcome (raise or succeed)."""
 
-    counts = {"sessions": 0, "logins": 0}
-
-    def start_session() -> None:
-        counts["sessions"] += 1
+    counts = {"logins": 0}
 
     def log_in() -> None:
         outcome = outcomes[counts["logins"]]
@@ -37,47 +34,19 @@ def patch_login(monkeypatch: pytest.MonkeyPatch, service: JewelService, outcomes
         if outcome is not None:
             raise outcome
 
-    monkeypatch.setattr(service, "_start_session", start_session)
     monkeypatch.setattr(service, "_log_in", log_in)
     return counts
 
 
-def test_retry_delay_backs_off_exponentially_with_jitter(service: JewelService) -> None:
-    for attempt, expected in [(1, 5), (2, 10), (3, 20), (4, 40), (5, 60), (10, 60)]:
-        delays = [service._get_retry_delay(attempt) for _ in range(200)]
-        assert all(expected * 0.75 <= d <= expected * 1.25 for d in delays)
-        assert len(set(delays)) > 1
-
-
-def test_login_retries_in_same_session_until_success(
+def test_login_retries_until_success(
     monkeypatch: pytest.MonkeyPatch, service: JewelService, sleeps: list[float]
 ) -> None:
     counts = patch_login(monkeypatch, service, [RuntimeError("blocked"), RuntimeError("blocked"), None])
 
     service._log_in_with_retry()
 
-    assert counts == {"sessions": 1, "logins": 3}
-    assert len(sleeps) == 2
-    assert sleeps[0] < sleeps[1]
-
-
-def test_login_starts_new_session_after_attempts_per_session(
-    monkeypatch: pytest.MonkeyPatch, service: JewelService, sleeps: list[float]
-) -> None:
-    monkeypatch.setattr(service, "LOGIN_ATTEMPTS_PER_SESSION", 2)
-    sessions_at_login: list[int] = []
-    counts = patch_login(monkeypatch, service, [RuntimeError("blocked")] * 3 + [None])
-    log_in = service._log_in
-
-    def tracked_log_in() -> None:
-        sessions_at_login.append(counts["sessions"])
-        log_in()
-
-    monkeypatch.setattr(service, "_log_in", tracked_log_in)
-
-    service._log_in_with_retry()
-
-    assert sessions_at_login == [1, 1, 2, 2]
+    assert counts == {"logins": 3}
+    assert sleeps == [JewelService.LOGIN_RETRY_DELAY_SECONDS] * 2
 
 
 def test_login_gives_up_after_max_attempts(
@@ -88,7 +57,7 @@ def test_login_gives_up_after_max_attempts(
     with pytest.raises(RuntimeError, match="3"):
         service._log_in_with_retry()
 
-    assert counts == {"sessions": 2, "logins": 4}
+    assert counts == {"logins": 4}
     assert len(sleeps) == 3
 
 
