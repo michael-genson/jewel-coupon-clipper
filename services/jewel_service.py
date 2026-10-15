@@ -3,6 +3,7 @@ import hashlib
 import json
 import logging
 import random
+import sys
 import time
 import urllib.parse
 import uuid
@@ -156,10 +157,7 @@ class JewelService:
         )
         ctx = browser.new_context(
             viewport={"width": 1280, "height": 800},
-            user_agent=(
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
-            ),
+            user_agent=self._get_user_agent(browser),
         )
         ctx.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         page = ctx.new_page()
@@ -167,6 +165,28 @@ class JewelService:
         page.wait_for_load_state("networkidle")
 
         return browser, ctx, page
+
+    @staticmethod
+    def _get_user_agent(browser: Browser) -> str:
+        """
+        A regular (non-headless) Chrome user agent for the OS and Chrome version we're actually running.
+        Anti-bot protection compares the user agent against what the browser reports elsewhere (e.g.
+        navigator.platform), so claiming a different OS - like a Mac user agent in a Linux Docker
+        container - gets flagged.
+        """
+
+        if sys.platform == "darwin":
+            os_part = "Macintosh; Intel Mac OS X 10_15_7"
+        elif sys.platform == "win32":
+            os_part = "Windows NT 10.0; Win64; x64"
+        else:
+            os_part = "X11; Linux x86_64"
+
+        # Real Chrome reports only its major version in the user agent
+        major_version = browser.version.split(".")[0]
+        return (
+            f"Mozilla/5.0 ({os_part}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{major_version}.0.0.0 Safari/537.36"
+        )
 
     def _log_in(self) -> None:
         def get_csms_headers() -> dict[str, str]:
