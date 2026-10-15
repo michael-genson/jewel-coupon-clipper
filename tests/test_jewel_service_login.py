@@ -49,16 +49,35 @@ def test_retry_delay_backs_off_exponentially_with_jitter(service: JewelService) 
         assert len(set(delays)) > 1
 
 
-def test_login_retries_with_fresh_session_until_success(
+def test_login_retries_in_same_session_until_success(
     monkeypatch: pytest.MonkeyPatch, service: JewelService, sleeps: list[float]
 ) -> None:
     counts = patch_login(monkeypatch, service, [RuntimeError("blocked"), RuntimeError("blocked"), None])
 
     service._log_in_with_retry()
 
-    assert counts == {"sessions": 3, "logins": 3}
+    assert counts == {"sessions": 1, "logins": 3}
     assert len(sleeps) == 2
     assert sleeps[0] < sleeps[1]
+
+
+def test_login_starts_new_session_after_attempts_per_session(
+    monkeypatch: pytest.MonkeyPatch, service: JewelService, sleeps: list[float]
+) -> None:
+    monkeypatch.setattr(service, "LOGIN_ATTEMPTS_PER_SESSION", 2)
+    sessions_at_login: list[int] = []
+    counts = patch_login(monkeypatch, service, [RuntimeError("blocked")] * 3 + [None])
+    log_in = service._log_in
+
+    def tracked_log_in() -> None:
+        sessions_at_login.append(counts["sessions"])
+        log_in()
+
+    monkeypatch.setattr(service, "_log_in", tracked_log_in)
+
+    service._log_in_with_retry()
+
+    assert sessions_at_login == [1, 1, 2, 2]
 
 
 def test_login_gives_up_after_max_attempts(
@@ -69,7 +88,7 @@ def test_login_gives_up_after_max_attempts(
     with pytest.raises(RuntimeError, match="3"):
         service._log_in_with_retry()
 
-    assert counts == {"sessions": 4, "logins": 4}
+    assert counts == {"sessions": 2, "logins": 4}
     assert len(sleeps) == 3
 
 

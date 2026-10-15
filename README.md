@@ -37,8 +37,10 @@ API constants shared across all banners - see `.env.example`. You shouldn't need
 ### Login retries
 
 Logins are occasionally blocked by the site's anti-bot protection, even when nothing is wrong. When
-that happens the login is retried in a brand-new browser session, waiting a little longer each time
-(roughly 5s, 10s, 20s, 40s, then 60s between attempts, with some randomness). If you regularly see
+that happens the login is retried, waiting a little longer each time (roughly 5s, 10s, 20s, 40s,
+then 60s between attempts, with some randomness). Retries stay in the same browser session, since the
+anti-bot protection tends to trust a session more the longer it's been around; only after 3 failures
+in a row is a brand-new session started. If you regularly see
 users fail with every attempt exhausted, try raising `LOGIN_MAX_ATTEMPTS`.
 
 ### Notifications
