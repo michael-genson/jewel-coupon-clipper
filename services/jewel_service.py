@@ -39,6 +39,18 @@ class JewelService:
     LOGIN_RETRY_MAX_DELAY_SECONDS = 60
     LOGIN_RETRY_JITTER = 0.25
 
+    # The site is behind Imperva, which builds trust per visitor (visid_incap cookie) as its script
+    # runs in the page. Retries stay in the same, increasingly-trusted session, and only start over
+    # with a new one after this many consecutive failures in case that session really is stuck.
+    LOGIN_ATTEMPTS_PER_SESSION = 3
+
+    # Before the first login in a session, wait for Imperva's reese84 token and linger on the page
+    # for a bit, rather than firing auth requests the instant the page goes idle.
+    SESSION_WARM_UP_COOKIE = "reese84"
+    SESSION_WARM_UP_COOKIE_TIMEOUT_SECONDS = 15
+    SESSION_WARM_UP_MIN_SECONDS = 3
+    SESSION_WARM_UP_MAX_SECONDS = 6
+
     def __init__(
         self,
         user_id: str,
@@ -91,21 +103,26 @@ class JewelService:
         max_attempts = get_settings().login_max_attempts
         for attempt in range(1, max_attempts + 1):
             try:
-                # Each attempt gets a fresh session: once anti-bot protection flags a session, its
-                # cookies tend to stay flagged, so retrying in the same one rarely helps.
-                self._start_session()
+                if self._needs_new_session(attempt):
+                    self._start_session()
                 self._log_in()
                 return
             except MFARequiredError:
                 raise
             except Exception:
-                self.logger.warning(f"Login attempt {attempt}/{max_attempts} failed")
+                self.logger.warning(f"Login attempt {attempt}/{max_attempts} failed", exc_info=True)
                 if attempt == max_attempts:
                     raise
 
                 delay = self._get_retry_delay(attempt)
-                self.logger.warning(f"retrying with a new session in {delay:.1f}s...")
+                session_msg = "a new session" if self._needs_new_session(attempt + 1) else "the same session"
+                self.logger.warning(f"retrying with {session_msg} in {delay:.1f}s...")
                 time.sleep(delay)
+
+    def _needs_new_session(self, attempt: int) -> bool:
+        """Whether login attempt number `attempt` (1-indexed) should start a new session first."""
+
+        return (attempt - 1) % self.LOGIN_ATTEMPTS_PER_SESSION == 0
 
     def __exit__(self, *args, **kwargs) -> None:
         try:
@@ -192,8 +209,36 @@ class JewelService:
         page = ctx.new_page()
         page.goto(self.root)
         page.wait_for_load_state("networkidle")
+        self._warm_up_session(ctx, page)
 
         return ctx, page
+
+    def _warm_up_session(self, ctx: BrowserContext, page: Page) -> None:
+        """
+        Gives anti-bot protection a chance to trust the session before logging in. Best-effort:
+        nothing here fails the session, since login itself is the real test.
+        """
+
+        deadline = time.monotonic() + self.SESSION_WARM_UP_COOKIE_TIMEOUT_SECONDS
+        while not any(c["name"] == self.SESSION_WARM_UP_COOKIE for c in ctx.cookies()):
+            if time.monotonic() >= deadline:
+                self.logger.debug(f"No {self.SESSION_WARM_UP_COOKIE} cookie after warm-up timeout, continuing anyway")
+                break
+            page.wait_for_timeout(500)
+
+        # Some light, human-ish interaction for the page's bot-detection script to observe
+        try:
+            x, y = random.randint(200, 1000), random.randint(150, 600)
+            for _ in range(random.randint(3, 6)):
+                x = min(max(x + random.randint(-250, 250), 0), 1279)
+                y = min(max(y + random.randint(-150, 150), 0), 799)
+                page.mouse.move(x, y, steps=random.randint(8, 20))
+                page.wait_for_timeout(random.randint(100, 400))
+            page.mouse.wheel(0, random.randint(200, 600))
+        except Exception:
+            self.logger.debug("Failed to simulate interaction during warm-up", exc_info=True)
+
+        page.wait_for_timeout(random.uniform(self.SESSION_WARM_UP_MIN_SECONDS, self.SESSION_WARM_UP_MAX_SECONDS) * 1000)
 
     def _log_in(self) -> None:
         def get_csms_headers() -> dict[str, str]:
