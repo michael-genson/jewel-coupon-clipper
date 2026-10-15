@@ -261,10 +261,12 @@ class JewelService:
                 "sessionToken": session_token,
             }
         )
-        self.page.goto(authorize_url)
+        # Only the cookie matters, not the page the redirects land on (which is heavy and can take
+        # well over 30s to fully load on slow hardware), so don't wait for the navigation to finish.
+        self.page.goto(authorize_url, wait_until="commit")
         # SWY_SHARED_SESSION is httpOnly, so it's invisible to document.cookie / wait_for_function;
         # poll the context's cookie jar instead.
-        for _ in range(30):
+        for _ in range(60):
             if any(c["name"] == "SWY_SHARED_SESSION" for c in self.ctx.cookies()):
                 break
             self.page.wait_for_timeout(500)
